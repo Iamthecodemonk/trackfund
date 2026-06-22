@@ -41,6 +41,11 @@ func randomID() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
+// RandomID returns a new random id string. Exported for use by other packages.
+func RandomID() (string, error) {
+	return randomID()
+}
+
 func randomToken() (string, error) {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {

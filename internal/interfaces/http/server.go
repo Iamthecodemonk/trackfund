@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"embed"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +12,9 @@ import (
 	fundsapp "trackfund/internal/application/funds"
 	"trackfund/internal/composition"
 )
+
+//go:embed openapi.json
+var openapiJSON embed.FS
 
 type Server struct {
 	app    *composition.App
@@ -40,6 +44,7 @@ func (s *Server) routes() {
 		r.Post("/verify-otp", s.verifyOTP)
 		r.Post("/resend-otp", s.resendOTP)
 		r.Post("/login", s.login)
+		r.Post("/google", s.googleAuth)
 		r.Post("/refresh-token", s.refreshToken)
 		r.Post("/logout", s.logout)
 		r.Post("/forgot-password", s.forgotPassword)
@@ -50,11 +55,63 @@ func (s *Server) routes() {
 			protected.Post("/change-password", s.changePassword)
 			protected.Post("/logout-all", s.logoutAll)
 		})
+
+		s.router.Route("/api/mono", func(r chi.Router) {
+			// webhook remains public (Mono will call it)
+			r.Post("/webhook", s.monoWebhook)
+
+			// protected Mono routes require authenticated user
+			r.Group(func(prot chi.Router) {
+				prot.Use(s.requireAuth)
+				prot.Post("/link-session", s.createMonoLinkSession)
+				prot.Post("/complete-link", s.completeMonoLink)
+				prot.Get("/accounts", s.listMonoAccounts)
+				prot.Get("/accounts/{id}/transactions", s.getMonoAccountTransactions)
+			})
+		})
 	})
 
 	s.router.Post("/funds", s.createFund)
 	s.router.Get("/funds/{id}", s.getFund)
 	s.router.Post("/funds/{id}/contributions", s.recordContribution)
+	// serve OpenAPI and a simple docs page
+	s.router.Get("/openapi.json", s.serveOpenAPI)
+	s.router.Get("/docs", s.serveDocs)
+}
+
+func (s *Server) serveOpenAPI(w http.ResponseWriter, r *http.Request) {
+	data, err := openapiJSON.ReadFile("openapi.json")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+func (s *Server) serveDocs(w http.ResponseWriter, r *http.Request) {
+	// serve a minimal HTML page that loads the OpenAPI JSON in Swagger UI CDN
+	html := `<!doctype html>
+<html>
+<head>
+	<title>TrackFund API Docs</title>
+	<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@4/swagger-ui.css" />
+</head>
+<body>
+	<div id="swagger-ui"></div>
+	<script src="https://unpkg.com/swagger-ui-dist@4/swagger-ui-bundle.js"></script>
+	<script>
+		const ui = SwaggerUIBundle({
+			url: '/openapi.json',
+			dom_id: '#swagger-ui'
+		});
+	</script>
+</body>
+</html>`
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(html))
 }
 
 func (s *Server) createFund(w http.ResponseWriter, r *http.Request) {

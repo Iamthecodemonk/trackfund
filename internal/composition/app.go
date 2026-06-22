@@ -11,10 +11,11 @@ import (
 	"trackfund/internal/application/ports"
 	"trackfund/internal/config"
 	"trackfund/internal/infrastructure/eventstore"
+	"trackfund/internal/infrastructure/logger"
+	monoclient "trackfund/internal/infrastructure/mono"
 	"trackfund/internal/infrastructure/postgres"
 	"trackfund/internal/infrastructure/projections"
 	redisinfra "trackfund/internal/infrastructure/redis"
-    "trackfund/internal/infrastructure/logger"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -29,11 +30,13 @@ type Queries struct {
 }
 
 type App struct {
-	Commands Commands
-	Queries  Queries
-	Auth     authapp.Service
-	Logger   *logger.Logger
-	Closer   func()
+	Commands   Commands
+	Queries    Queries
+	Auth       authapp.Service
+	Logger     *logger.Logger
+	Closer     func()
+	MonoRepo   *postgres.MonoRepository
+	MonoClient *monoclient.Client
 }
 
 func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
@@ -66,11 +69,36 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 	dbReadModel := postgres.NewFundSummaryReadModel(db)
 	cachedReadModel := redisinfra.NewFundSummaryCache(redisClient, dbReadModel, 5*time.Minute)
 
-	app := wireApp(store, cachedReadModel, authRepo, cfg.JWTSecret, func() {
+	// create email sender from config; fallback to log sender when SMTP not configured
+	var emailSender authapp.EmailSender = authapp.LogEmailSender{}
+	if cfg.SMTPHost != "" {
+		emailSender = authapp.NewSMTPEmailSender(cfg)
+	}
+
+	monoRepo := postgres.NewMonoRepository(db)
+	monoClient := monoclient.NewClient(cfg.MonoBaseURL, cfg.MonoSecretKey, cfg.MonoPublicKey)
+	// create background context and cancel
+	bgCtx, cancel := context.WithCancel(context.Background())
+	app := wireApp(store, cachedReadModel, authRepo, monoRepo, monoClient, cfg.JWTSecret, func() {
+		cancel()
 		_ = redisClient.Close()
 		db.Close()
 	})
+	// start Asynq worker and enqueue background sync every 5 minutes
+	if client, err := StartAsynqWorker(bgCtx, cfg.RedisAddr, app); err == nil {
+		go startMonoSync(bgCtx, app, client, 5*time.Minute)
+	}
 	app.Logger = lg
+	// replace auth service with configured email sender
+	app.Auth = authapp.NewService(authRepo, emailSender, authapp.Config{
+		JWTSecret:         cfg.JWTSecret,
+		AccessTokenTTL:    15 * time.Minute,
+		RefreshTokenTTL:   30 * 24 * time.Hour,
+		OTPTTL:            10 * time.Minute,
+		OTPRateLimitCount: 3,
+		OTPRateLimitEvery: time.Hour,
+	})
+
 	return app, nil
 }
 
@@ -80,12 +108,17 @@ func NewInMemoryApp() *App {
 	authRepo := eventstore.NewInMemoryAuthRepository()
 	fundSummaryReadModel := projections.NewInMemoryFundSummaryReadModel()
 
-	app := wireApp(store, fundSummaryReadModel, authRepo, "test-secret", func() {})
+	app := wireApp(store, fundSummaryReadModel, authRepo, nil, nil, "test-secret", func() {})
 	app.Logger = lg
 	return app
 }
 
-func wireApp(eventStore ports.EventStore, fundSummaryReadModel fundsapp.FundSummaryReadModel, authRepo authapp.Repository, jwtSecret string, closer func()) *App {
+func wireApp(
+	eventStore ports.EventStore,
+	fundSummaryReadModel fundsapp.FundSummaryReadModel,
+	authRepo authapp.Repository, monoRepo *postgres.MonoRepository,
+	monoClient *monoclient.Client,
+	jwtSecret string, closer func()) *App {
 	projector := projections.NewFundSummaryProjector(fundSummaryReadModel)
 	projector.Attach(eventStore)
 
@@ -105,6 +138,8 @@ func wireApp(eventStore ports.EventStore, fundSummaryReadModel fundsapp.FundSumm
 			OTPRateLimitCount: 3,
 			OTPRateLimitEvery: time.Hour,
 		}),
-		Closer: closer,
+		MonoRepo:   monoRepo,
+		MonoClient: monoClient,
+		Closer:     closer,
 	}
 }

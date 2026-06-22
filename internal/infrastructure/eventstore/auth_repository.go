@@ -12,6 +12,7 @@ type InMemoryAuthRepository struct {
 	mu            sync.Mutex
 	users         map[string]auth.User
 	usersByEmail  map[string]string
+	pending       map[string]auth.User
 	otps          map[string]auth.OTP
 	refreshTokens map[string]auth.RefreshToken
 }
@@ -20,6 +21,7 @@ func NewInMemoryAuthRepository() *InMemoryAuthRepository {
 	return &InMemoryAuthRepository{
 		users:         map[string]auth.User{},
 		usersByEmail:  map[string]string{},
+		pending:       map[string]auth.User{},
 		otps:          map[string]auth.OTP{},
 		refreshTokens: map[string]auth.RefreshToken{},
 	}
@@ -97,6 +99,47 @@ func (r *InMemoryAuthRepository) SaveOTP(_ context.Context, otp auth.OTP) error 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.otps[otp.ID] = otp
+	return nil
+}
+
+func (r *InMemoryAuthRepository) SavePendingUser(_ context.Context, user auth.User) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pending[user.ID] = user
+	return nil
+}
+
+func (r *InMemoryAuthRepository) FindPendingUserByEmail(_ context.Context, email string) (auth.User, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, u := range r.pending {
+		if u.Email == email {
+			return u, true, nil
+		}
+	}
+	return auth.User{}, false, nil
+}
+
+func (r *InMemoryAuthRepository) DeletePendingUser(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.pending, id)
+	return nil
+}
+
+func (r *InMemoryAuthRepository) FindUserByOAuth(_ context.Context, provider string, providerID string) (auth.User, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// naive in-memory mapping: check pending and users for provider id stored in email field as provider:providerID
+	for _, u := range r.users {
+		// no-op in memory unless linked; skip
+		_ = u
+	}
+	return auth.User{}, false, nil
+}
+
+func (r *InMemoryAuthRepository) SaveOAuthProvider(_ context.Context, provider string, providerID string, userID string) error {
+	// not implemented for in-memory demo
 	return nil
 }
 

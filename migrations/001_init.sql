@@ -57,7 +57,7 @@ CREATE INDEX IF NOT EXISTS refresh_tokens_token_hash_idx ON refresh_tokens (toke
 
 CREATE TABLE IF NOT EXISTS otps (
 	id TEXT PRIMARY KEY,
-	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	user_id TEXT NOT NULL,
 	email TEXT NOT NULL,
 	otp_hash TEXT NOT NULL,
 	type TEXT NOT NULL CHECK (type IN ('email_verification', 'password_reset')),
@@ -67,3 +67,56 @@ CREATE TABLE IF NOT EXISTS otps (
 );
 
 CREATE INDEX IF NOT EXISTS otps_email_type_idx ON otps (email, type, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS pending_users (
+	id TEXT PRIMARY KEY,
+	full_name TEXT NOT NULL,
+	email TEXT NOT NULL UNIQUE,
+	phone TEXT NOT NULL DEFAULT '',
+	password_hash TEXT NOT NULL,
+	role TEXT NOT NULL,
+	status TEXT NOT NULL,
+	is_email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+	token_version INT NOT NULL DEFAULT 0,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS oauth_providers (
+	id TEXT PRIMARY KEY,
+	provider TEXT NOT NULL,
+	provider_id TEXT NOT NULL,
+	user_id TEXT NOT NULL,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	UNIQUE(provider, provider_id)
+);
+
+-- Mono integration tables: store linked accounts and transactions
+CREATE TABLE IF NOT EXISTS mono_accounts (
+	id TEXT PRIMARY KEY,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	mono_account_id TEXT NOT NULL UNIQUE,
+	provider TEXT NOT NULL,
+	account_name TEXT NOT NULL,
+	account_number TEXT,
+	bank_code TEXT,
+	currency TEXT,
+	metadata JSONB,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS mono_transactions (
+	id TEXT PRIMARY KEY,
+	mono_account_id TEXT NOT NULL REFERENCES mono_accounts(id) ON DELETE CASCADE,
+	transaction_id TEXT NOT NULL UNIQUE,
+	amount BIGINT NOT NULL,
+	currency TEXT NOT NULL,
+	paid_at TIMESTAMPTZ NOT NULL,
+	description TEXT,
+	raw JSONB,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS mono_transactions_account_idx ON mono_transactions (mono_account_id);
+

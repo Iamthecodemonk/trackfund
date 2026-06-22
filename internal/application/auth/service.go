@@ -41,7 +41,17 @@ type Repository interface {
 	FindRefreshToken(ctx context.Context, tokenHash string) (auth.RefreshToken, bool, error)
 	RevokeRefreshToken(ctx context.Context, id string, at time.Time) error
 	RevokeUserRefreshTokens(ctx context.Context, userID string, at time.Time) error
+
+	// pending users (saved during registration until OTP confirmation)
+	SavePendingUser(ctx context.Context, user auth.User) error
+	FindPendingUserByEmail(ctx context.Context, email string) (auth.User, bool, error)
+	DeletePendingUser(ctx context.Context, id string) error
+	// OAuth providers linking
+	FindUserByOAuth(ctx context.Context, provider string, providerID string) (auth.User, bool, error)
+	SaveOAuthProvider(ctx context.Context, provider string, providerID string, userID string) error
 }
+
+// Add oauth lookups
 
 type EmailSender interface {
 	SendOTP(ctx context.Context, email, otp string, typ auth.OTPType) error
@@ -149,7 +159,8 @@ func (s Service) Register(ctx context.Context, command RegisterCommand) error {
 		return err
 	}
 	now := s.now()
-	user := auth.User{
+	// save as pending registration until OTP confirmed
+	pending := auth.User{
 		ID:              userID,
 		FullName:        strings.TrimSpace(command.FullName),
 		Email:           email,
@@ -162,14 +173,45 @@ func (s Service) Register(ctx context.Context, command RegisterCommand) error {
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
-	if err := s.repo.CreateUser(ctx, user); err != nil {
+	// if there's an existing pending registration for this email, remove it first
+	if existing, ok, err := s.repo.FindPendingUserByEmail(ctx, pending.Email); err != nil {
+		return err
+	} else if ok {
+		if err := s.repo.DeletePendingUser(ctx, existing.ID); err != nil {
+			return err
+		}
+	}
+
+	if err := s.repo.SavePendingUser(ctx, pending); err != nil {
 		return err
 	}
-	return s.issueOTP(ctx, user.ID, user.Email, auth.OTPTypeEmailVerification)
+	return s.issueOTP(ctx, pending.ID, pending.Email, auth.OTPTypeEmailVerification)
 }
 
 func (s Service) VerifyOTP(ctx context.Context, email, otpValue string) error {
-	user, ok, err := s.repo.FindUserByEmail(ctx, normalizeEmail(email))
+	normalized := normalizeEmail(email)
+	// first check pending registrations
+	pending, ok, err := s.repo.FindPendingUserByEmail(ctx, normalized)
+	if err != nil {
+		return err
+	}
+	if ok {
+		otp, err := s.verifyOTP(ctx, pending.Email, otpValue, auth.OTPTypeEmailVerification)
+		if err != nil {
+			return err
+		}
+		// create the real user
+		if err := s.repo.CreateUser(ctx, pending); err != nil {
+			return err
+		}
+		if err := s.repo.DeletePendingUser(ctx, pending.ID); err != nil {
+			return err
+		}
+		return s.repo.DeleteOTP(ctx, otp.ID)
+	}
+
+	// fallback: existing user flow
+	user, ok, err := s.repo.FindUserByEmail(ctx, normalized)
 	if err != nil {
 		return err
 	}
@@ -391,6 +433,33 @@ func (s Service) verifyOTP(ctx context.Context, email, otpValue string, typ auth
 		return auth.OTP{}, ErrInvalidOTP
 	}
 	return otp, nil
+}
+
+// --- OAuth / helper wrappers exposed on Service ---
+func (s Service) FindUserByOAuth(ctx context.Context, provider string, providerID string) (auth.User, bool, error) {
+	return s.repo.FindUserByOAuth(ctx, provider, providerID)
+}
+
+func (s Service) SaveOAuthProvider(ctx context.Context, provider string, providerID string, userID string) error {
+	return s.repo.SaveOAuthProvider(ctx, provider, providerID, userID)
+}
+
+func (s Service) FindUserByEmail(ctx context.Context, email string) (auth.User, bool, error) {
+	return s.repo.FindUserByEmail(ctx, email)
+}
+
+func (s Service) CreateUser(ctx context.Context, user auth.User) error {
+	return s.repo.CreateUser(ctx, user)
+}
+
+// CreateTokensForUser issues access and refresh tokens for an existing user (no password required)
+func (s Service) CreateTokensForUser(ctx context.Context, user auth.User) (AuthResult, error) {
+	// create session with empty device info
+	res, err := s.createSession(ctx, user, "", "", "")
+	if err != nil {
+		return AuthResult{}, err
+	}
+	return res, nil
 }
 
 func (s Service) changePassword(ctx context.Context, user auth.User, newPassword, otpID string) error {

@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	authapp "trackfund/internal/application/auth"
 	domainauth "trackfund/internal/domain/auth"
@@ -94,6 +97,101 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, authEnvelope{Success: true, Message: "Login successful.", Data: result})
+}
+
+func (s *Server) googleAuth(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		IDToken string `json:"idToken"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeAuthError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	// verify id token with Google
+	resp, err := http.Get(fmt.Sprintf("https://oauth2.googleapis.com/tokeninfo?id_token=%s", request.IDToken))
+	if err != nil {
+		writeAuthError(w, http.StatusBadRequest, err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		writeAuthError(w, http.StatusUnauthorized, fmt.Errorf("invalid id token: %s", string(body)))
+		return
+	}
+	var info struct {
+		Sub   string `json:"sub"`
+		Email string `json:"email"`
+		Name  string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		writeAuthError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// check if provider is linked to a user
+	user, ok, err := s.app.Auth.FindUserByOAuth(r.Context(), "google", info.Sub)
+	if err != nil {
+		writeAuthError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if ok {
+		// login existing user
+		result, err := s.app.Auth.Login(r.Context(), authapp.LoginCommand{Email: user.Email, Password: ""})
+		if err != nil {
+			// fallback: issue tokens directly
+			token, _ := s.app.Auth.CreateTokensForUser(r.Context(), user)
+			writeJSON(w, http.StatusOK, authEnvelope{Success: true, Message: "Login successful.", Data: token})
+			return
+		}
+		writeJSON(w, http.StatusOK, authEnvelope{Success: true, Message: "Login successful.", Data: result})
+		return
+	}
+
+	// create or link account: if user exists by email, link; otherwise create pending user and link
+	existingUser, ok2, err := s.app.Auth.FindUserByEmail(r.Context(), strings.ToLower(info.Email))
+	if err != nil {
+		writeAuthError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if ok2 {
+		// link provider
+		if err := s.app.Auth.SaveOAuthProvider(r.Context(), "google", info.Sub, existingUser.ID); err != nil {
+			writeAuthError(w, http.StatusInternalServerError, err)
+			return
+		}
+		token, _ := s.app.Auth.CreateTokensForUser(r.Context(), existingUser)
+		writeJSON(w, http.StatusOK, authEnvelope{Success: true, Message: "Login successful.", Data: token})
+		return
+	} // <--- THIS BRACE WAS MISSING
+
+	// create new user and link
+	newID, _ := authapp.RandomID()
+	now := time.Now().UTC()
+	newUser := domainauth.User{
+		ID:              newID,
+		FullName:        info.Name,
+		Email:           strings.ToLower(info.Email),
+		Phone:           "",
+		PasswordHash:    "",
+		Role:            domainauth.RoleUser,
+		Status:          domainauth.StatusActive,
+		IsEmailVerified: true,
+		TokenVersion:    0,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := s.app.Auth.CreateUser(r.Context(), newUser); err != nil {
+		writeAuthError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := s.app.Auth.SaveOAuthProvider(r.Context(), "google", info.Sub, newUser.ID); err != nil {
+		writeAuthError(w, http.StatusInternalServerError, err)
+		return
+	}
+	token, _ := s.app.Auth.CreateTokensForUser(r.Context(), newUser)
+	writeJSON(w, http.StatusOK, authEnvelope{Success: true, Message: "Login successful.", Data: token})
 }
 
 func (s *Server) refreshToken(w http.ResponseWriter, r *http.Request) {

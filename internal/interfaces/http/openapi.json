@@ -1,0 +1,503 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "TrackFund API",
+    "version": "0.1.0",
+    "description": "Minimal OpenAPI spec for TrackFund"
+  },
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "summary": "Register user",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fullName": { "type": "string" },
+                  "email": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "password": { "type": "string" }
+                },
+                "required": ["fullName", "email", "password"]
+              },
+              "example": {
+                "fullName": "Jane Developer",
+                "email": "jane@example.com",
+                "phone": "",
+                "password": "Str0ngP@ssw0rd"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OTP sent",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "OTP sent to jane@example.com",
+                  "data": {
+                    "email": "jane@example.com",
+                    "requiresOtp": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string" },
+                  "password": { "type": "string" },
+                  "deviceName": { "type": "string" }
+                },
+                "required": ["email", "password"]
+              },
+              "example": {
+                "email": "jane@example.com",
+                "password": "Str0ngP@ssw0rd",
+                "deviceName": "Laptop"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "Login successful.",
+                  "data": {
+                    "user": {
+                      "id": "user_1",
+                      "fullName": "Jane Developer",
+                      "email": "jane@example.com",
+                      "role": "USER"
+                    },
+                    "accessToken": "<jwt>",
+                    "refreshToken": "<refresh>"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/verify-otp": {
+      "post": {
+        "summary": "Verify OTP (confirm registration or verify existing user)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string" },
+                  "otp": { "type": "string" },
+                  "required": ["email", "otp"]
+                }
+              },
+              "example": {
+                "email": "jane@example.com",
+                "otp": "123456"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "Email verified successfully. You can now log in."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/resend-otp": {
+      "post": {
+        "summary": "Resend OTP",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string" }
+                }
+              },
+              "example": {
+                "email": "jane@example.com"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "OTP resent to jane@example.com"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/forgot-password": {
+      "post": {
+        "summary": "Forgot password (send OTP)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string" }
+                }
+              },
+              "example": {
+                "email": "jane@example.com"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/api/auth/reset-password": {
+      "post": {
+        "summary": "Reset password",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string" },
+                  "otp": { "type": "string" },
+                  "newPassword": { "type": "string" },
+                  "required": ["email", "otp", "newPassword"]
+                }
+              },
+              "example": {
+                "email": "jane@example.com",
+                "otp": "123456",
+                "newPassword": "NewP@ssw0rd"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/api/auth/google": {
+      "post": {
+        "summary": "Sign in with Google (provide id_token from client)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "idToken": { "type": "string" }
+                }
+              },
+              "example": {
+                "idToken": "<google-id-token>"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "Login successful.",
+                  "data": {
+                    "user": {
+                      "id": "user_1",
+                      "fullName": "Google User",
+                      "email": "google@example.com",
+                      "role": "USER"
+                    },
+                    "accessToken": "<jwt>",
+                    "refreshToken": "<refresh>"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mono/link-session": {
+      "post": {
+        "summary": "Create a Mono link session (returns client token/session for frontend)",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object" },
+              "example": { "redirectUrl": "https://yourapp.example.com/mono/callback" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "example": {
+                  "session": { "client_token": "<client-token>", "expires_in": 300 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mono/complete-link": {
+      "post": {
+        "summary": "Complete Mono link by exchanging code on server",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "code": { "type": "string" }, "userId": { "type": "string" } },
+                "required": ["code", "userId"]
+              },
+              "example": { "code": "mono_code_abc123", "userId": "user_1" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "example": { "ok": true, "data": { "accounts": [ { "id": "mono_acc_1" } ] } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mono/accounts": {
+      "get": {
+        "summary": "List Mono accounts for a user",
+        "parameters": [
+          { "name": "user_id", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "example": [ { "id": "internal_id_1", "monoAccountId": "mono_acc_1", "accountName": "Primary" } ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mono/accounts/{id}/transactions": {
+      "get": {
+        "summary": "Get transactions for an internal mono account id",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": { "200": { "description": "ok", "content": { "application/json": { "example": [ { "transactionId": "tx_1", "amount": 5000, "currency": "NGN", "paidAt": "2026-06-20T00:00:00Z" } ] } } } }
+      }
+    },
+    "/funds": {
+      "post": {
+        "summary": "Create fund",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "targetAmount": { "type": "integer" },
+                  "currency": { "type": "string" }
+                },
+                "required": ["name", "targetAmount", "currency"]
+              },
+              "example": {
+                "name": "School Fund",
+                "targetAmount": 100000,
+                "currency": "USD"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "created",
+            "content": {
+              "application/json": {
+                "example": {
+                  "fundId": "fund_1"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/funds/{id}": {
+      "get": {
+        "summary": "Get fund",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": "fund_1",
+                  "name": "School Fund",
+                  "targetAmount": 100000,
+                  "currency": "USD",
+                  "totalContributions": 25000,
+                  "remainingAmount": 75000,
+                  "contributionCount": 3
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/funds/{id}/contributions": {
+      "post": {
+        "summary": "Record contribution",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "amount": { "type": "integer" },
+                  "contributor": { "type": "string" }
+                },
+                "required": ["amount", "contributor"]
+              },
+              "example": {
+                "amount": 5000,
+                "contributor": "Alice"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "accepted",
+            "content": {
+              "application/json": {
+                "example": {
+                  "accepted": true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  ,
+  "components": {
+    "schemas": {
+      "MonoAccount": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "monoAccountId": { "type": "string" },
+          "accountName": { "type": "string" },
+          "accountNumber": { "type": "string" },
+          "bankCode": { "type": "string" },
+          "currency": { "type": "string" }
+        }
+      },
+      "MonoTransaction": {
+        "type": "object",
+        "properties": {
+          "transactionId": { "type": "string" },
+          "amount": { "type": "integer" },
+          "currency": { "type": "string" },
+          "paidAt": { "type": "string", "format": "date-time" },
+          "description": { "type": "string" }
+        }
+      },
+      "MonoWebhook": {
+        "type": "object",
+        "properties": {
+          "event": { "type": "string" },
+          "event_id": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "data": { "type": "object" }
+        }
+      }
+    }
+  }
+}
