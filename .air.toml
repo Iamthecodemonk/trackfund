@@ -1,0 +1,15 @@
+# Air config for trackfund
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/trackfund ./cmd/api"
+  bin = "./tmp/trackfund"
+  include_ext = ["go", "tpl", "tmpl", "html", "json"]
+  exclude_dir = ["assets", "migrations", "tmp", "vendor"]
+
+[log]
+  time = true
+
+[color]
+  main = "green"

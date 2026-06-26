@@ -201,6 +201,10 @@ func (s Service) VerifyOTP(ctx context.Context, email, otpValue string) error {
 			return err
 		}
 		// create the real user
+		// mark as active and verified before creating in users table
+		pending.Status = auth.StatusActive
+		pending.IsEmailVerified = true
+		pending.UpdatedAt = s.now()
 		if err := s.repo.CreateUser(ctx, pending); err != nil {
 			return err
 		}

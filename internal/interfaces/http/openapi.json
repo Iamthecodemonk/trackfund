@@ -274,81 +274,101 @@
     },
     "/api/mono/link-session": {
       "post": {
-        "summary": "Create a Mono link session (returns client token/session for frontend)",
+        "summary": "Create a Mono link session (returns client token for frontend/mobile)",
+        "security": [{ "bearerAuth": [] }],
+        "description": "Returns a short-lived client token that the frontend (web or mobile) uses to open Mono Connect UI. Frontend must authenticate with the app via Bearer token.",
         "requestBody": {
           "required": false,
           "content": {
             "application/json": {
               "schema": { "type": "object" },
-              "example": { "redirectUrl": "https://yourapp.example.com/mono/callback" }
+              "example": { "redirectUrl": "yourapp://mono/callback" }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "ok",
+            "description": "client token",
             "content": {
               "application/json": {
-                "example": {
-                  "session": { "client_token": "<client-token>", "expires_in": 300 }
-                }
+                "schema": { "type": "object", "properties": { "client_token": { "type": "string" }, "expires_in": { "type": "integer" } } },
+                "example": { "client_token": "<client-token>", "expires_in": 300 }
               }
             }
-          }
+          },
+          "401": { "description": "Unauthorized" }
         }
       }
     },
     "/api/mono/complete-link": {
       "post": {
-        "summary": "Complete Mono link by exchanging code on server",
+        "summary": "Exchange Mono short-lived code on server and persist accounts",
+        "security": [{ "bearerAuth": [] }],
+        "description": "Frontend posts the `code` received from Mono Connect to this endpoint. Server exchanges it with Mono using the secret key and upserts returned accounts.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": { "code": { "type": "string" }, "userId": { "type": "string" } },
-                "required": ["code", "userId"]
-              },
-              "example": { "code": "mono_code_abc123", "userId": "user_1" }
+              "schema": { "type": "object", "properties": { "code": { "type": "string" } }, "required": ["code"] },
+              "example": { "code": "mono_code_abc123" }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "ok",
+            "description": "accounts upserted",
             "content": {
               "application/json": {
-                "example": { "ok": true, "data": { "accounts": [ { "id": "mono_acc_1" } ] } }
+                "schema": { "type": "object", "properties": { "ok": { "type": "boolean" }, "data": { "type": "object" } } },
+                "example": { "ok": true, "data": { "accounts": [ { "id": "internal_id_1", "monoAccountId": "mono_acc_1", "accountName": "Primary" } ] } }
               }
             }
-          }
+          },
+          "400": { "description": "Bad request / invalid code" },
+          "401": { "description": "Unauthorized" }
         }
       }
     },
     "/api/mono/accounts": {
       "get": {
-        "summary": "List Mono accounts for a user",
-        "parameters": [
-          { "name": "user_id", "in": "query", "required": true, "schema": { "type": "string" } }
-        ],
+        "summary": "List Mono accounts for the authenticated user",
+        "security": [{ "bearerAuth": [] }],
         "responses": {
           "200": {
             "description": "ok",
             "content": {
               "application/json": {
-                "example": [ { "id": "internal_id_1", "monoAccountId": "mono_acc_1", "accountName": "Primary" } ]
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MonoAccount" } },
+                "example": [ { "id": "internal_id_1", "monoAccountId": "mono_acc_1", "accountName": "Primary", "accountNumber": "0123456789", "bankCode": "001", "currency": "NGN" } ]
               }
             }
-          }
+          },
+          "401": { "description": "Unauthorized" }
         }
       }
     },
     "/api/mono/accounts/{id}/transactions": {
       "get": {
         "summary": "Get transactions for an internal mono account id",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ],
-        "responses": { "200": { "description": "ok", "content": { "application/json": { "example": [ { "transactionId": "tx_1", "amount": 5000, "currency": "NGN", "paidAt": "2026-06-20T00:00:00Z" } ] } } } }
+        "responses": { "200": { "description": "ok", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MonoTransaction" } }, "example": [ { "transactionId": "tx_1", "amount": 5000, "currency": "NGN", "paidAt": "2026-06-20T00:00:00Z", "description": "Test payment" } ] } } }, "401": { "description": "Unauthorized" } }
+      }
+    },
+    "/api/mono/webhook": {
+      "post": {
+        "summary": "Mono webhook endpoint (public)",
+        "description": "Mono will POST events here. The server verifies the `mono-webhook-secret` header.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MonoWebhook" },
+              "example": { "event": "mono.events.account_connected", "event_id": "evt_123", "timestamp": "2026-06-22T12:00:00Z", "data": { "account": { "id": "mono_acc_abc", "user_id": "user_1", "provider": "mono", "name": "My Account", "account_number": "0123456789", "bank_code": "001", "currency": "NGN" } } }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" }, "401": { "description": "invalid webhook secret" } }
       }
     },
     "/funds": {
@@ -467,6 +487,13 @@
   }
   ,
   "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
     "schemas": {
       "MonoAccount": {
         "type": "object",

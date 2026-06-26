@@ -26,12 +26,36 @@ func NewServer(app *composition.App) *Server {
 		app:    app,
 		router: chi.NewRouter(),
 	}
+	server.router.Use(corsMiddleware)
 	// attach request logging middleware when available
 	if app != nil && app.Logger != nil {
 		server.router.Use(app.Logger.RequestMiddleware)
 	}
 	server.routes()
 	return server
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if origin := r.Header.Get("Origin"); origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			if requestedHeaders := r.Header.Get("Access-Control-Request-Headers"); requestedHeaders != "" {
+				w.Header().Set("Access-Control-Allow-Headers", requestedHeaders)
+			} else {
+				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) Handler() http.Handler {
