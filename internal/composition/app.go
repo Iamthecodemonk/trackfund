@@ -37,6 +37,7 @@ type App struct {
 	Closer     func()
 	MonoRepo   *postgres.MonoRepository
 	MonoClient *monoclient.Client
+	Config     config.Config
 }
 
 func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
@@ -76,7 +77,8 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 
 	monoRepo := postgres.NewMonoRepository(db)
-	monoClient := monoclient.NewClient(cfg.MonoBaseURL, cfg.MonoSecretKey, cfg.MonoPublicKey)
+	monoClient := monoclient.NewClientWithTimeout(cfg.MonoBaseURL, cfg.MonoSecretKey, cfg.MonoPublicKey, time.Duration(cfg.MonoTimeoutSecs)*time.Second)
+	monoClient.Debug = cfg.MonoDebugLogging && cfg.Env != "production"
 	// create background context and cancel
 	bgCtx, cancel := context.WithCancel(context.Background())
 	app := wireApp(store, cachedReadModel, authRepo, monoRepo, monoClient, cfg.JWTSecret, func() {
@@ -89,6 +91,7 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 		go startMonoSync(bgCtx, app, client, 5*time.Minute)
 	}
 	app.Logger = lg
+	app.Config = cfg
 	// replace auth service with configured email sender
 	app.Auth = authapp.NewService(authRepo, emailSender, authapp.Config{
 		JWTSecret:         cfg.JWTSecret,
@@ -110,6 +113,7 @@ func NewInMemoryApp() *App {
 
 	app := wireApp(store, fundSummaryReadModel, authRepo, nil, nil, "test-secret", func() {})
 	app.Logger = lg
+	app.Config = config.Config{Env: "test"}
 	return app
 }
 

@@ -12,10 +12,13 @@ $env:SMTP_USER  = "noreply@skills4export.com"
 $env:SMTP_PASS  = '!123skills4exporT'
 $env:SMTP_FROM  = "noreply@skills4export.com"
 # Mono config
-$env:MONO_PUBLIC_KEY = "test_pk_t7abdmtip2x92wradvyn"
-$env:MONO_SECRET_KEY = "test_sk_x2zlus1mprtutchfo449"
-$env:MONO_BASE_URL = "https://api.withmono.com/v2"
-$env:MONO_WEBHOOK_SECRET = ""
+if (-not $env:MONO_PUBLIC_KEY) { Write-Warning "MONO_PUBLIC_KEY is not set." }
+if (-not $env:MONO_SECRET_KEY) { Write-Warning "MONO_SECRET_KEY is not set." }
+if (-not $env:MONO_BASE_URL) { Write-Warning "MONO_BASE_URL is not set. Use the Mono sandbox URL in development and live URL in production." }
+if (-not $env:MONO_CALLBACK_URL) { Write-Warning "MONO_CALLBACK_URL is not set. Flutter must send redirect_url/callback_url when creating a Mono link session." }
+if (-not $env:MONO_WEBHOOK_SECRET) { $env:MONO_WEBHOOK_SECRET = "" }
+if (-not $env:MONO_TIMEOUT_SECONDS) { $env:MONO_TIMEOUT_SECONDS = "60" }
+if (-not $env:MONO_DEBUG_LOGGING) { $env:MONO_DEBUG_LOGGING = "true" }
 
 # Jobs Redis (if different from REDIS_ADDR)
 $env:JOBS_REDIS_ADDR = "$wslIp:6379"

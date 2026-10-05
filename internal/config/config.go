@@ -28,7 +28,10 @@ type Config struct {
 	MonoPublicKey     string
 	MonoSecretKey     string
 	MonoBaseURL       string
+	MonoCallbackURL   string
+	MonoTimeoutSecs   int
 	MonoWebhookSecret string
+	MonoDebugLogging  bool
 	// App runtime
 	Env      string
 	LogLevel string
@@ -39,7 +42,7 @@ func Load() Config {
 
 	return Config{
 		Port:              port,
-		JWTSecret:         getenv("JWT_SECRET", "change-me-in-production"),
+		JWTSecret:         getenv("JWT_SECRET", "demo232@@@"),
 		DatabaseURL:       getenv("DATABASE_URL", "postgres://trackfund:trackfund@localhost:5432/trackfund?sslmode=disable"),
 		RedisAddr:         getenv("REDIS_ADDR", "localhost:6379"),
 		RedisPass:         os.Getenv("REDIS_PASSWORD"),
@@ -49,12 +52,15 @@ func Load() Config {
 		SMTPHost:          getenv("SMTP_HOST", "mail.privateemail.com"),
 		SMTPPort:          getenv("SMTP_PORT", "465"),
 		SMTPUser:          getenv("SMTP_USER", "noreply@skills4export.com"),
-		SMTPPass:          getenv("SMTP_PASS", "!123skills4exporT"),
+		SMTPPass:          getenv("SMTP_PASS", "iT%Dd5cvvif-wR2"),
 		SMTPFrom:          getenv("SMTP_FROM", "noreply@skills4export.com"),
-		MonoPublicKey:     getenv("MONO_PUBLIC_KEY", "test_pk_t7abdmtip2x92wradvyn"),
-		MonoSecretKey:     getenv("MONO_SECRET_KEY", "test_sk_x2zlus1mprtutchfo449"),
-		MonoBaseURL:       getenv("MONO_BASE_URL", "https://api.withmono.com/v2"),
+		MonoPublicKey:     os.Getenv("MONO_PUBLIC_KEY"),
+		MonoSecretKey:     os.Getenv("MONO_SECRET_KEY"),
+		MonoBaseURL:       os.Getenv("MONO_BASE_URL"),
+		MonoCallbackURL:   os.Getenv("MONO_CALLBACK_URL"),
+		MonoTimeoutSecs:   getenvInt("MONO_TIMEOUT_SECONDS", 30),
 		MonoWebhookSecret: getenv("MONO_WEBHOOK_SECRET", ""),
+		MonoDebugLogging:  getenvBool("MONO_DEBUG_LOGGING", strings.EqualFold(getenv("ENV", "development"), "development")),
 		SMTPUseTLS:        getenvBool("SMTP_USE_TLS", false),
 		Env:               getenv("ENV", "development"),
 		LogLevel:          getenv("LOG_LEVEL", "info"),

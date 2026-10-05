@@ -274,25 +274,34 @@
     },
     "/api/mono/link-session": {
       "post": {
-        "summary": "Create a Mono link session (returns client token for frontend/mobile)",
+        "summary": "Create a Mono link session (returns Mono Connect URL for frontend/mobile)",
         "security": [{ "bearerAuth": [] }],
-        "description": "Returns a short-lived client token that the frontend (web or mobile) uses to open Mono Connect UI. Frontend must authenticate with the app via Bearer token.",
+        "description": "Returns a Mono Connect URL that the frontend/mobile app opens to start account linking. Frontend must authenticate with the app via Bearer token. Send `redirect_url`; `redirectUrl`, `callback_url`, and `callbackUrl` are accepted for compatibility and normalized before calling Mono. If omitted, backend uses MONO_CALLBACK_URL. If `scope` is omitted, the backend defaults it to `auth`. Do not send `public_key` to this endpoint.",
         "requestBody": {
           "required": false,
           "content": {
             "application/json": {
-              "schema": { "type": "object" },
-              "example": { "redirectUrl": "yourapp://mono/callback" }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "redirect_url": { "type": "string", "description": "Frontend callback URL passed to Mono." },
+                  "redirectUrl": { "type": "string", "description": "Compatibility alias; backend normalizes this to `redirect_url`." },
+                  "callback_url": { "type": "string", "description": "Compatibility alias; backend normalizes this to `redirect_url`." },
+                  "callbackUrl": { "type": "string", "description": "Compatibility alias; backend normalizes this to `redirect_url`." },
+                  "scope": { "type": "string", "default": "auth", "example": "auth" }
+                }
+              },
+              "example": { "redirect_url": "yourapp://mono/callback", "scope": "auth" }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "client token",
+            "description": "Mono Connect URL",
             "content": {
               "application/json": {
-                "schema": { "type": "object", "properties": { "client_token": { "type": "string" }, "expires_in": { "type": "integer" } } },
-                "example": { "client_token": "<client-token>", "expires_in": 300 }
+                "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "data": { "type": "object", "properties": { "client_token": { "type": "string", "description": "Non-empty link credential. Uses Mono client_token when present, otherwise mono_url for current Mono v2 responses." }, "mono_url": { "type": "string" }, "scope": { "type": "string" }, "redirect_url": { "type": "string" } } } } },
+                "example": { "success": true, "data": { "client_token": "https://link.mono.co/ALB65XCPXCOU", "mono_url": "https://link.mono.co/ALB65XCPXCOU", "scope": "auth", "redirect_url": "yourapp://mono/callback" } }
               }
             }
           },
@@ -319,8 +328,8 @@
             "description": "accounts upserted",
             "content": {
               "application/json": {
-                "schema": { "type": "object", "properties": { "ok": { "type": "boolean" }, "data": { "type": "object" } } },
-                "example": { "ok": true, "data": { "accounts": [ { "id": "internal_id_1", "monoAccountId": "mono_acc_1", "accountName": "Primary" } ] } }
+                "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "data": { "type": "object" } } },
+                "example": { "success": true, "data": { "accounts": [ { "id": "internal_id_1", "monoAccountId": "mono_acc_1", "accountName": "Primary" } ] } }
               }
             }
           },
@@ -330,6 +339,25 @@
       }
     },
     "/api/mono/accounts": {
+      "post": {
+        "summary": "Exchange Mono short-lived code on server and persist account",
+        "security": [{ "bearerAuth": [] }],
+        "description": "Flutter may call this after Mono redirects back with a code. Server exchanges it with Mono and stores the linked account.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "properties": { "code": { "type": "string" } }, "required": ["code"] },
+              "example": { "code": "mono_code_abc123" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "account upserted" },
+          "400": { "description": "Bad request / missing code" },
+          "401": { "description": "Unauthorized" }
+        }
+      },
       "get": {
         "summary": "List Mono accounts for the authenticated user",
         "security": [{ "bearerAuth": [] }],
@@ -338,8 +366,8 @@
             "description": "ok",
             "content": {
               "application/json": {
-                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MonoAccount" } },
-                "example": [ { "id": "internal_id_1", "monoAccountId": "mono_acc_1", "accountName": "Primary", "accountNumber": "0123456789", "bankCode": "001", "currency": "NGN" } ]
+                "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "data": { "type": "array", "items": { "$ref": "#/components/schemas/MonoAccount" } } } },
+                "example": { "success": true, "data": [ { "id": "internal_id_1", "monoAccountId": "mono_acc_1", "accountName": "Primary", "accountNumber": "0123456789", "bankCode": "001", "currency": "NGN" } ] }
               }
             }
           },

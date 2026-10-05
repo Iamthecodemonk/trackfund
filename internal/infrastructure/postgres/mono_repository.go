@@ -52,17 +52,17 @@ func (r *MonoRepository) GetInternalAccountIDByMonoID(ctx context.Context, monoA
 }
 
 type MonoAccount struct {
-	ID            string
-	UserID        string
-	MonoAccountID string
-	Provider      string
-	AccountName   string
-	AccountNumber string
-	BankCode      string
-	Currency      string
-	Metadata      json.RawMessage
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID            string          `json:"id"`
+	UserID        string          `json:"userId"`
+	MonoAccountID string          `json:"monoAccountId"`
+	Provider      string          `json:"provider"`
+	AccountName   string          `json:"accountName"`
+	AccountNumber string          `json:"accountNumber"`
+	BankCode      string          `json:"bankCode"`
+	Currency      string          `json:"currency"`
+	Metadata      json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt     time.Time       `json:"createdAt"`
+	UpdatedAt     time.Time       `json:"updatedAt"`
 }
 
 func (r *MonoRepository) ListAccounts(ctx context.Context, userID string) ([]MonoAccount, error) {
@@ -79,7 +79,7 @@ func (r *MonoRepository) ListAccounts(ctx context.Context, userID string) ([]Mon
 		}
 		out = append(out, a)
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
 func (r *MonoRepository) GetAccountByID(ctx context.Context, id string) (MonoAccount, bool, error) {
@@ -106,19 +106,19 @@ func (r *MonoRepository) ListAllAccounts(ctx context.Context) ([]MonoAccount, er
 		}
 		out = append(out, a)
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
 type MonoTransaction struct {
-	ID            string
-	MonoAccountID string
-	TransactionID string
-	Amount        int64
-	Currency      string
-	PaidAt        time.Time
-	Description   string
-	Raw           json.RawMessage
-	CreatedAt     time.Time
+	ID            string          `json:"id"`
+	MonoAccountID string          `json:"monoAccountId"`
+	TransactionID string          `json:"transactionId"`
+	Amount        int64           `json:"amount"`
+	Currency      string          `json:"currency"`
+	PaidAt        time.Time       `json:"paidAt"`
+	Description   string          `json:"description"`
+	Raw           json.RawMessage `json:"raw,omitempty"`
+	CreatedAt     time.Time       `json:"createdAt"`
 }
 
 func (r *MonoRepository) ListTransactionsByAccountID(ctx context.Context, internalAccountID string) ([]MonoTransaction, error) {
@@ -135,5 +135,5 @@ func (r *MonoRepository) ListTransactionsByAccountID(ctx context.Context, intern
 		}
 		out = append(out, t)
 	}
-	return out, nil
+	return out, rows.Err()
 }

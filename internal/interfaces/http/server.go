@@ -89,6 +89,7 @@ func (s *Server) routes() {
 				prot.Use(s.requireAuth)
 				prot.Post("/link-session", s.createMonoLinkSession)
 				prot.Post("/complete-link", s.completeMonoLink)
+				prot.Post("/accounts", s.createMonoAccount)
 				prot.Get("/accounts", s.listMonoAccounts)
 				prot.Get("/accounts/{id}/transactions", s.getMonoAccountTransactions)
 			})
@@ -197,5 +198,48 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
-	writeJSON(w, status, map[string]string{"error": err.Error()})
+	message := http.StatusText(status)
+	if message == "" {
+		message = "error"
+	}
+	if err != nil {
+		message = err.Error()
+	}
+	writeAPIError(w, status, strings.ToLower(strings.ReplaceAll(http.StatusText(status), " ", "_")), message, "")
+}
+
+func writeAPISuccess(w http.ResponseWriter, status int, data any) {
+	writeJSON(w, status, map[string]any{
+		"success": true,
+		"data":    data,
+	})
+}
+
+func writeAPIError(w http.ResponseWriter, status int, code, message, details string) {
+	writeAPIStepError(w, status, code, code, message, details)
+}
+
+func writeAPIStepError(w http.ResponseWriter, status int, step, code, message, details string) {
+	if code == "" {
+		code = "error"
+	}
+	if step == "" {
+		step = code
+	}
+	if message == "" {
+		message = http.StatusText(status)
+	}
+	body := map[string]any{
+		"success": false,
+		"step":    step,
+		"status":  status,
+		"message": message,
+		"details": details,
+		"error": map[string]any{
+			"code":    code,
+			"message": message,
+			"details": details,
+		},
+	}
+	writeJSON(w, status, body)
 }

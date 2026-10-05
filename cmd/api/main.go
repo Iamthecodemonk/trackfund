@@ -44,7 +44,7 @@ func main() {
 	go func() {
 		lg.Info("starting server", slog.String("addr", srv.Addr))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			lg.Error("server failed", err)
+			lg.Error("server failed", slog.Any("err", err))
 			os.Exit(1)
 		}
 	}()
@@ -58,7 +58,7 @@ func main() {
 	ctxShut, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctxShut); err != nil {
-		lg.Error("graceful shutdown failed", err)
+		lg.Error("graceful shutdown failed", slog.Any("err", err))
 	} else {
 		lg.Info("server stopped")
 	}
