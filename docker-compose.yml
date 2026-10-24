@@ -8,6 +8,21 @@ services:
         condition: service_healthy
     environment:
       PORT: 3005
+      ENV: ${ENV:-development}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET to a random secret of at least 32 bytes}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      MONO_PUBLIC_KEY: ${MONO_PUBLIC_KEY:-}
+      MONO_SECRET_KEY: ${MONO_SECRET_KEY:-}
+      MONO_BASE_URL: ${MONO_BASE_URL:-https://api.withmono.com/v2}
+      MONO_CALLBACK_URL: ${MONO_CALLBACK_URL:-}
+      MONO_ALLOWED_REDIRECT_URLS: ${MONO_ALLOWED_REDIRECT_URLS:-}
+      MONO_WEBHOOK_SECRET: ${MONO_WEBHOOK_SECRET:-}
+      MONO_TIMEOUT_SECONDS: ${MONO_TIMEOUT_SECONDS:-30}
+      MONO_DEBUG_LOGGING: ${MONO_DEBUG_LOGGING:-false}
       DATABASE_URL: postgres://trackfund:trackfund@postgres:5432/trackfund?sslmode=disable
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: ""

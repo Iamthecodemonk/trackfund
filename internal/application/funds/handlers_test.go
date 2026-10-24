@@ -15,9 +15,10 @@ func TestCreateFundProjectsSummary(t *testing.T) {
 	projector.Attach(store)
 
 	createFund := fundsapp.NewCreateFundHandler(store)
-	getSummary := fundsapp.NewGetFundSummaryHandler(readModel)
+	getSummary := fundsapp.NewGetFundSummaryHandler(readModel, store)
 
 	result, err := createFund.Handle(fundsapp.CreateFundCommand{
+		UserID:       "owner-a",
 		Name:         "School fees",
 		TargetAmount: 250000,
 		Currency:     "NGN",
@@ -26,7 +27,7 @@ func TestCreateFundProjectsSummary(t *testing.T) {
 		t.Fatalf("CreateFund returned error: %v", err)
 	}
 
-	summary, ok, err := getSummary.Handle(fundsapp.GetFundSummaryQuery{FundID: result.FundID})
+	summary, ok, err := getSummary.Handle(fundsapp.GetFundSummaryQuery{UserID: "owner-a", FundID: result.FundID})
 	if err != nil {
 		t.Fatalf("GetFundSummary returned error: %v", err)
 	}
@@ -46,9 +47,10 @@ func TestRecordContributionAppendsEventAndUpdatesSummary(t *testing.T) {
 
 	createFund := fundsapp.NewCreateFundHandler(store)
 	recordContribution := fundsapp.NewRecordContributionHandler(store)
-	getSummary := fundsapp.NewGetFundSummaryHandler(readModel)
+	getSummary := fundsapp.NewGetFundSummaryHandler(readModel, store)
 
 	result, err := createFund.Handle(fundsapp.CreateFundCommand{
+		UserID:       "owner-a",
 		Name:         "Rent",
 		TargetAmount: 400000,
 		Currency:     "NGN",
@@ -58,6 +60,7 @@ func TestRecordContributionAppendsEventAndUpdatesSummary(t *testing.T) {
 	}
 
 	if err := recordContribution.Handle(fundsapp.RecordContributionCommand{
+		UserID:      "owner-a",
 		FundID:      result.FundID,
 		Amount:      125000,
 		Contributor: "Ada",
@@ -73,7 +76,7 @@ func TestRecordContributionAppendsEventAndUpdatesSummary(t *testing.T) {
 		t.Fatalf("expected 2 events, got %d", len(events))
 	}
 
-	summary, ok, err := getSummary.Handle(fundsapp.GetFundSummaryQuery{FundID: result.FundID})
+	summary, ok, err := getSummary.Handle(fundsapp.GetFundSummaryQuery{UserID: "owner-a", FundID: result.FundID})
 	if err != nil {
 		t.Fatalf("GetFundSummary returned error: %v", err)
 	}

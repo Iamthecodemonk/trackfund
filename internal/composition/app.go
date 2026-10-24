@@ -30,14 +30,15 @@ type Queries struct {
 }
 
 type App struct {
-	Commands   Commands
-	Queries    Queries
-	Auth       authapp.Service
-	Logger     *logger.Logger
-	Closer     func()
-	MonoRepo   *postgres.MonoRepository
-	MonoClient *monoclient.Client
-	Config     config.Config
+	Commands     Commands
+	Queries      Queries
+	Auth         authapp.Service
+	Logger       *logger.Logger
+	Closer       func()
+	MonoRepo     *postgres.MonoRepository
+	MonoSessions ports.MonoSessionStore
+	MonoClient   *monoclient.Client
+	Config       config.Config
 }
 
 func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
@@ -126,13 +127,17 @@ func wireApp(
 	projector := projections.NewFundSummaryProjector(fundSummaryReadModel)
 	projector.Attach(eventStore)
 
+	var monoSessions ports.MonoSessionStore
+	if monoRepo != nil {
+		monoSessions = monoRepo
+	}
 	return &App{
 		Commands: Commands{
 			CreateFund:         fundsapp.NewCreateFundHandler(eventStore),
 			RecordContribution: fundsapp.NewRecordContributionHandler(eventStore),
 		},
 		Queries: Queries{
-			GetFundSummary: fundsapp.NewGetFundSummaryHandler(fundSummaryReadModel),
+			GetFundSummary: fundsapp.NewGetFundSummaryHandler(fundSummaryReadModel, eventStore),
 		},
 		Auth: authapp.NewService(authRepo, authapp.LogEmailSender{}, authapp.Config{
 			JWTSecret:         jwtSecret,
@@ -142,8 +147,9 @@ func wireApp(
 			OTPRateLimitCount: 3,
 			OTPRateLimitEvery: time.Hour,
 		}),
-		MonoRepo:   monoRepo,
-		MonoClient: monoClient,
-		Closer:     closer,
+		MonoRepo:     monoRepo,
+		MonoSessions: monoSessions,
+		MonoClient:   monoClient,
+		Closer:       closer,
 	}
 }

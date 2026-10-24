@@ -3,7 +3,7 @@ package funds
 import "testing"
 
 func TestCreateFundRecordsFundCreatedEvent(t *testing.T) {
-	fund, err := CreateFund("School fees", 250000, "NGN")
+	fund, err := CreateFund("owner-a", "School fees", 250000, "NGN")
 	if err != nil {
 		t.Fatalf("CreateFund returned error: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestCreateFundRecordsFundCreatedEvent(t *testing.T) {
 }
 
 func TestRecordContributionRecordsEvent(t *testing.T) {
-	fund, err := CreateFund("Rent", 400000, "NGN")
+	fund, err := CreateFund("owner-a", "Rent", 400000, "NGN")
 	if err != nil {
 		t.Fatalf("CreateFund returned error: %v", err)
 	}
@@ -39,5 +39,18 @@ func TestRecordContributionRecordsEvent(t *testing.T) {
 	}
 	if _, ok := changes[0].(ContributionRecorded); !ok {
 		t.Fatalf("expected ContributionRecorded, got %T", changes[0])
+	}
+}
+
+func TestOwnerSurvivesRehydration(t *testing.T) {
+	f, err := CreateFund("owner-a", "Rent", 100, "NGN")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if Rehydrate(f.Changes()).OwnerID() != "owner-a" {
+		t.Fatal("owner was not persisted in creation event")
+	}
+	if _, err := CreateFund(" ", "Rent", 100, "NGN"); err == nil {
+		t.Fatal("ownerless creation accepted")
 	}
 }

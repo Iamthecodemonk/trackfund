@@ -18,6 +18,9 @@ import (
 func main() {
 	ctx := context.Background()
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatal(err)
+	}
 
 	app, err := composition.NewApp(ctx, cfg)
 	if err != nil {

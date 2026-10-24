@@ -11,6 +11,7 @@ import (
 
 	fundsapp "trackfund/internal/application/funds"
 	"trackfund/internal/composition"
+	"trackfund/internal/domain/shared"
 )
 
 //go:embed openapi.json
@@ -96,9 +97,18 @@ func (s *Server) routes() {
 		})
 	})
 
-	s.router.Post("/funds", s.createFund)
-	s.router.Get("/funds/{id}", s.getFund)
-	s.router.Post("/funds/{id}/contributions", s.recordContribution)
+	s.router.Group(func(r chi.Router) {
+		r.Use(s.requireAuth)
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				next.ServeHTTP(w, r)
+			})
+		})
+		r.Post("/funds", s.createFund)
+		r.Get("/funds/{id}", s.getFund)
+		r.Post("/funds/{id}/contributions", s.recordContribution)
+	})
 	// serve OpenAPI and a simple docs page
 	s.router.Get("/openapi.json", s.serveOpenAPI)
 	s.router.Get("/docs", s.serveDocs)
@@ -146,9 +156,10 @@ func (s *Server) createFund(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	command.UserID = currentUser(r).ID
 	result, err := s.app.Commands.CreateFund.Handle(command)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeFundError(w, err)
 		return
 	}
 
@@ -161,14 +172,11 @@ func (s *Server) recordContribution(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	command.UserID = currentUser(r).ID
 	command.FundID = strings.TrimSpace(chi.URLParam(r, "id"))
 
 	if err := s.app.Commands.RecordContribution.Handle(command); err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, fundsapp.ErrFundNotFound) {
-			status = http.StatusNotFound
-		}
-		writeError(w, status, err)
+		writeFundError(w, err)
 		return
 	}
 
@@ -178,9 +186,10 @@ func (s *Server) recordContribution(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getFund(w http.ResponseWriter, r *http.Request) {
 	summary, ok, err := s.app.Queries.GetFundSummary.Handle(fundsapp.GetFundSummaryQuery{
 		FundID: strings.TrimSpace(chi.URLParam(r, "id")),
+		UserID: currentUser(r).ID,
 	})
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeFundError(w, err)
 		return
 	}
 	if !ok {
@@ -242,4 +251,19 @@ func writeAPIStepError(w http.ResponseWriter, status int, step, code, message, d
 		},
 	}
 	writeJSON(w, status, body)
+}
+
+func writeFundError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, fundsapp.ErrFundAuthenticationRequired):
+		writeAPIError(w, http.StatusUnauthorized, "unauthorized", err.Error(), "")
+	case errors.Is(err, fundsapp.ErrFundForbidden):
+		writeAPIError(w, http.StatusForbidden, "fund_forbidden", err.Error(), "")
+	case errors.Is(err, fundsapp.ErrFundNotFound):
+		writeAPIError(w, http.StatusNotFound, "fund_not_found", err.Error(), "")
+	case errors.Is(err, shared.ErrNameRequired), errors.Is(err, shared.ErrTargetAmountInvalid), errors.Is(err, shared.ErrCurrencyInvalid), errors.Is(err, shared.ErrContributionInvalid), errors.Is(err, shared.ErrContributorRequired):
+		writeAPIError(w, http.StatusBadRequest, "invalid_fund", err.Error(), "")
+	default:
+		writeAPIError(w, http.StatusInternalServerError, "fund_operation_failed", "Could not complete the fund operation", "")
+	}
 }

@@ -13,6 +13,7 @@ var currencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
 
 type Fund struct {
 	id                 string
+	ownerID            string
 	name               string
 	targetAmount       int64
 	currency           string
@@ -21,7 +22,11 @@ type Fund struct {
 	changes            []Event
 }
 
-func CreateFund(name string, targetAmount int64, currency string) (*Fund, error) {
+func CreateFund(ownerID, name string, targetAmount int64, currency string) (*Fund, error) {
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return nil, shared.ErrOwnerRequired
+	}
 	name = strings.TrimSpace(name)
 
 	if name == "" {
@@ -36,6 +41,7 @@ func CreateFund(name string, targetAmount int64, currency string) (*Fund, error)
 
 	fund := &Fund{}
 	fund.record(FundCreated{
+		OwnerID:      ownerID,
 		FundID:       newID(),
 		Name:         name,
 		TargetAmount: targetAmount,
@@ -98,6 +104,7 @@ func (f *Fund) record(event Event) {
 func (f *Fund) apply(event Event) {
 	switch e := event.(type) {
 	case FundCreated:
+		f.ownerID = e.OwnerID
 		f.id = e.FundID
 		f.name = e.Name
 		f.targetAmount = e.TargetAmount
@@ -114,3 +121,5 @@ func newID() string {
 	}
 	return hex.EncodeToString(bytes[:])
 }
+
+func (f *Fund) OwnerID() string { return f.ownerID }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -108,125 +109,113 @@ func (s *Server) monoWebhook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// createMonoLinkSession starts a Mono connect session (forwarding request body to Mono client)
+// createMonoLinkSession builds provider-owned fields from the authenticated user.
 func (s *Server) createMonoLinkSession(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	if s.app == nil || s.app.MonoClient == nil || s.app.MonoClient.SecretKey == "" {
-		writeAPIStepError(w, http.StatusNotImplemented, "create_link_session", "mono_not_configured", "Mono integration is not configured", "MONO_SECRET_KEY is required.")
+	w.Header().Set("Cache-Control", "no-store")
+	fail := func(status int, code, message string) {
+		writeAPIStepError(w, status, "create_link_session", code, message, "")
+	}
+	if s.app == nil || s.app.MonoClient == nil || strings.TrimSpace(s.app.MonoClient.SecretKey) == "" {
+		fail(http.StatusNotImplemented, "mono_not_configured", "MONO_SECRET_KEY is required")
 		return
 	}
-	if strings.TrimSpace(s.app.MonoClient.BaseURL) == "" {
-		writeAPIStepError(w, http.StatusNotImplemented, "create_link_session", "mono_base_url_missing", "Mono base URL is not configured", "Set MONO_BASE_URL for the current environment, for example the Mono sandbox URL in development and live URL in production.")
+	if s.app.MonoSessions == nil {
+		fail(http.StatusServiceUnavailable, "mono_sessions_unavailable", "Mono session storage is unavailable")
 		return
 	}
-	payload := map[string]any{}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && err != io.EOF {
-		s.logMonoError("mono.link_session.invalid_json", err)
-		writeAPIStepError(w, http.StatusBadRequest, "create_link_session", "invalid_json", "Request body must be valid JSON", err.Error())
+	user := currentUser(r)
+	if user.ID == "" {
+		fail(http.StatusUnauthorized, "unauthorized", "Authentication is required")
 		return
 	}
-	if redirectURL, ok := payload["redirectUrl"].(string); ok && redirectURL != "" {
-		payload["redirect_url"] = redirectURL
-		delete(payload, "redirectUrl")
+	if strings.TrimSpace(user.FullName) == "" || strings.TrimSpace(user.Email) == "" {
+		fail(http.StatusUnprocessableEntity, "mono_customer_incomplete", "Your profile requires a name and email")
+		return
 	}
-	if callbackURL, ok := payload["callback_url"].(string); ok && callbackURL != "" {
-		payload["redirect_url"] = callbackURL
+	var request struct {
+		RedirectURL   string `json:"redirect_url"`
+		RedirectCamel string `json:"redirectUrl"`
+		CallbackURL   string `json:"callback_url"`
+		CallbackCamel string `json:"callbackUrl"`
 	}
-	if callbackURL, ok := payload["callbackUrl"].(string); ok && callbackURL != "" {
-		payload["redirect_url"] = callbackURL
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(&request)
+	if err != nil && err != io.EOF {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			fail(http.StatusRequestEntityTooLarge, "request_too_large", "Request body exceeds 4 KiB")
+		} else {
+			fail(http.StatusBadRequest, "invalid_json", "Request body must be a JSON object")
+		}
+		return
 	}
-	if redirectURL, _ := payload["redirect_url"].(string); strings.TrimSpace(redirectURL) == "" {
-		if s.app != nil && strings.TrimSpace(s.app.Config.MonoCallbackURL) != "" {
-			payload["redirect_url"] = strings.TrimSpace(s.app.Config.MonoCallbackURL)
+	if err == nil {
+		var extra any
+		if decoder.Decode(&extra) != io.EOF {
+			fail(http.StatusBadRequest, "invalid_json", "Send a single JSON object")
+			return
 		}
 	}
-	if redirectURL, _ := payload["redirect_url"].(string); strings.TrimSpace(redirectURL) == "" {
-		s.logMonoInfo("mono.link_session.validation_failed", slog.String("reason", "missing_redirect_url"))
-		writeAPIStepError(w, http.StatusBadRequest, "create_link_session", "missing_callback_url", "Missing Mono callback URL", "Send redirect_url/callback_url from Flutter or set MONO_CALLBACK_URL for this environment.")
+	redirect := ""
+	for _, candidate := range []string{request.RedirectURL, request.RedirectCamel, request.CallbackURL, request.CallbackCamel} {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if redirect != "" && redirect != candidate {
+			fail(http.StatusUnprocessableEntity, "conflicting_callback_urls", "Callback aliases must match")
+			return
+		}
+		redirect = candidate
+	}
+	if redirect == "" {
+		redirect = s.app.Config.MonoCallbackURL
+	}
+	if redirect == "" {
+		fail(http.StatusUnprocessableEntity, "missing_callback_url", "Configure MONO_CALLBACK_URL or send an allowed redirect_url")
 		return
 	}
-	if scope, ok := payload["scope"].(string); !ok || scope == "" {
-		payload["scope"] = "auth"
+	if !s.app.Config.AllowsMonoRedirect(redirect) {
+		fail(http.StatusUnprocessableEntity, "invalid_callback_url", "Callback URL is not allowed")
+		return
 	}
-	s.logMonoInfo("mono.link_session.incoming",
-		slog.String("method", r.Method),
-		slog.String("path", r.URL.Path),
-		slog.Any("payload", payload),
-	)
-	s.logMonoInfo("mono.link_session.mono_request",
-		slog.String("method", http.MethodPost),
-		slog.String("url", s.app.MonoClient.BaseURL+"/accounts/initiate"),
-		slog.Bool("secret_key_configured", s.app.MonoClient.SecretKey != ""),
-		slog.Bool("public_key_configured", s.app.MonoClient.PublicKey != ""),
-		slog.Any("payload", payload),
-	)
-	resp, err := s.app.MonoClient.CreateLinkSession(ctx, payload)
+	reference, err := authapp.RandomID()
+	if err != nil {
+		fail(http.StatusInternalServerError, "mono_reference_failed", "Could not create a session reference")
+		return
+	}
+	// Save first: a webhook can arrive before the upstream HTTP response.
+	if err := s.app.MonoSessions.CreateLinkSession(r.Context(), reference, user.ID, redirect); err != nil {
+		fail(http.StatusServiceUnavailable, "mono_session_save_failed", "Could not save the connection session")
+		return
+	}
+	payload := map[string]any{
+		"customer": map[string]any{"name": user.FullName, "email": user.Email},
+		"scope":    "auth", "redirect_url": redirect, "meta": map[string]any{"ref": reference},
+	}
+	resp, err := s.app.MonoClient.CreateLinkSession(r.Context(), payload)
 	if err != nil {
 		if monoclient.IsTimeoutError(err) {
-			s.logMonoError("mono.link_session.timeout", err)
-			writeAPIStepError(w, http.StatusGatewayTimeout, "create_link_session", "mono_timeout", "Mono request timed out", err.Error())
-			return
+			fail(http.StatusGatewayTimeout, "mono_timeout", "Mono request timed out")
+		} else {
+			fail(http.StatusBadGateway, "mono_session_failed", "Mono could not create a connection link")
 		}
-		if errors.Is(err, monoclient.ErrInvalidLinkSessionResponse) {
-			s.logMonoError("mono.link_session.invalid_response", err)
-			writeAPIStepError(w, http.StatusBadGateway, "create_link_session", "invalid_mono_link_response", "Mono did not return a usable link session credential", "Expected mono_url or client_token in Mono response.")
-			return
-		}
-		var monoErr *monoclient.RequestError
-		if errors.As(err, &monoErr) {
-			s.logMonoError("mono.link_session.mono_error", err,
-				slog.String("method", monoErr.Method),
-				slog.String("url", monoErr.URL),
-				slog.Int("status", monoErr.StatusCode),
-				slog.String("raw_body", monoErr.Body),
-			)
-			writeAPIStepError(w, monoErr.StatusCode, "create_link_session", "mono_error", monoResponseMessage(monoErr.Body), monoErr.Body)
-			return
-		}
-		var parseErr *monoclient.ResponseParseError
-		if errors.As(err, &parseErr) {
-			s.logMonoError("mono.link_session.parse_error", err,
-				slog.String("method", parseErr.Method),
-				slog.String("url", parseErr.URL),
-				slog.String("raw_body", parseErr.Body),
-			)
-			writeAPIStepError(w, http.StatusBadGateway, "create_link_session", "mono_parse_error", "Could not parse Mono link session response", parseErr.Body)
-			return
-		}
-		s.logMonoError("mono.link_session.contact_error", err)
-		writeAPIStepError(w, http.StatusBadGateway, "create_link_session", "mono_contact_error", "Could not contact Mono", err.Error())
 		return
 	}
-	linkCredential := resp.Data.ClientToken
-	if linkCredential == "" {
-		linkCredential = resp.Data.MonoURL
-	}
-	if strings.TrimSpace(linkCredential) == "" {
-		s.logMonoInfo("mono.link_session.parsed_response",
-			slog.Bool("client_token_present", resp.Data.ClientToken != ""),
-			slog.Bool("mono_url_present", resp.Data.MonoURL != ""),
-		)
-		writeAPIStepError(w, http.StatusBadGateway, "create_link_session", "empty_link_credential", "Mono link session response was missing client_token/mono_url", "Backend refused to return HTTP 200 with an empty link credential.")
+	link, parseErr := url.Parse(resp.Data.MonoURL)
+	if parseErr != nil || link.Scheme != "https" || link.Hostname() == "" || link.User != nil {
+		fail(http.StatusBadGateway, "invalid_mono_link_response", "Mono did not return a usable hosted link")
 		return
 	}
-	data := map[string]any{
-		"client_token": linkCredential,
-		"mono_url":     resp.Data.MonoURL,
-		"scope":        resp.Data.Scope,
-		"redirect_url": resp.Data.RedirectURL,
-		"is_multi":     resp.Data.IsMulti,
-		"created_at":   resp.Data.CreatedAt,
+	credential := resp.Data.ClientToken
+	if credential == "" {
+		credential = resp.Data.MonoURL
 	}
-	s.logMonoInfo("mono.link_session.parsed_response",
-		slog.Bool("client_token_present", resp.Data.ClientToken != ""),
-		slog.Bool("mono_url_present", resp.Data.MonoURL != ""),
-		slog.String("redirect_url", resp.Data.RedirectURL),
-	)
-	s.logMonoInfo("mono.link_session.response_returned",
-		slog.Int("status", http.StatusOK),
-		slog.Any("data", data),
-	)
-	writeAPISuccess(w, http.StatusOK, data)
+	writeAPISuccess(w, http.StatusOK, map[string]any{
+		"mono_url": resp.Data.MonoURL, "client_token": credential, "reference": reference,
+		"status": "pending", "scope": "auth", "redirect_url": redirect,
+	})
 }
 
 func (s *Server) logMonoInfo(msg string, attrs ...slog.Attr) {

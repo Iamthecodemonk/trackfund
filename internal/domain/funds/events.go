@@ -13,6 +13,7 @@ type Event interface {
 }
 
 type FundCreated struct {
+	OwnerID      string
 	FundID       string
 	Name         string
 	TargetAmount int64

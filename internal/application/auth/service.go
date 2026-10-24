@@ -349,7 +349,7 @@ func (s Service) LogoutAll(ctx context.Context, userID string) error {
 func (s Service) AuthenticateAccessToken(ctx context.Context, token string) (auth.User, error) {
 	claims, err := s.tokenManager.Verify(token)
 	if err != nil {
-		return auth.User{}, err
+		return auth.User{}, ErrUnauthorized
 	}
 	user, ok, err := s.repo.FindUserByID(ctx, claims.UserID)
 	if err != nil {

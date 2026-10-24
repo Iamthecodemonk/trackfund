@@ -275,8 +275,12 @@
     "/api/mono/link-session": {
       "post": {
         "summary": "Create a Mono link session (returns Mono Connect URL for frontend/mobile)",
-        "security": [{ "bearerAuth": [] }],
-        "description": "Returns a Mono Connect URL that the frontend/mobile app opens to start account linking. Frontend must authenticate with the app via Bearer token. Send `redirect_url`; `redirectUrl`, `callback_url`, and `callbackUrl` are accepted for compatibility and normalized before calling Mono. If omitted, backend uses MONO_CALLBACK_URL. If `scope` is omitted, the backend defaults it to `auth`. Do not send `public_key` to this endpoint.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Create a pending hosted-link session. Customer and meta.ref come from the server. Redirect aliases must agree and match the configured allowlist. Hosted completion uses webhooks, not a guaranteed redirect code.",
         "requestBody": {
           "required": false,
           "content": {
@@ -284,28 +288,111 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "redirect_url": { "type": "string", "description": "Frontend callback URL passed to Mono." },
-                  "redirectUrl": { "type": "string", "description": "Compatibility alias; backend normalizes this to `redirect_url`." },
-                  "callback_url": { "type": "string", "description": "Compatibility alias; backend normalizes this to `redirect_url`." },
-                  "callbackUrl": { "type": "string", "description": "Compatibility alias; backend normalizes this to `redirect_url`." },
-                  "scope": { "type": "string", "default": "auth", "example": "auth" }
+                  "redirect_url": {
+                    "type": "string",
+                    "description": "Frontend callback URL passed to Mono."
+                  },
+                  "redirectUrl": {
+                    "type": "string",
+                    "description": "Compatibility alias; backend normalizes this to `redirect_url`."
+                  },
+                  "callback_url": {
+                    "type": "string",
+                    "description": "Compatibility alias; backend normalizes this to `redirect_url`."
+                  },
+                  "callbackUrl": {
+                    "type": "string",
+                    "description": "Compatibility alias; backend normalizes this to `redirect_url`."
+                  },
+                  "scope": {
+                    "type": "string",
+                    "default": "auth",
+                    "example": "auth",
+                    "description": "Compatibility field; server always uses auth."
+                  }
                 }
               },
-              "example": { "redirect_url": "yourapp://mono/callback", "scope": "auth" }
+              "example": {
+                "redirect_url": "trackfund://mono/callback"
+              }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Mono Connect URL",
+            "description": "Pending link: data contains mono_url, compatibility client_token, reference, status, scope, redirect_url",
             "content": {
               "application/json": {
-                "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "data": { "type": "object", "properties": { "client_token": { "type": "string", "description": "Non-empty link credential. Uses Mono client_token when present, otherwise mono_url for current Mono v2 responses." }, "mono_url": { "type": "string" }, "scope": { "type": "string" }, "redirect_url": { "type": "string" } } } } },
-                "example": { "success": true, "data": { "client_token": "https://link.mono.co/ALB65XCPXCOU", "mono_url": "https://link.mono.co/ALB65XCPXCOU", "scope": "auth", "redirect_url": "yourapp://mono/callback" } }
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "client_token": {
+                          "type": "string",
+                          "description": "Non-empty link credential. Uses Mono client_token when present, otherwise mono_url for current Mono v2 responses."
+                        },
+                        "mono_url": {
+                          "type": "string"
+                        },
+                        "scope": {
+                          "type": "string"
+                        },
+                        "redirect_url": {
+                          "type": "string"
+                        },
+                        "reference": {
+                          "type": "string",
+                          "description": "Server-generated reference persisted against the authenticated user."
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "mono_url",
+                        "reference",
+                        "status"
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "client_token": "https://link.mono.co/ALB65XCPXCOU",
+                    "mono_url": "https://link.mono.co/ALB65XCPXCOU",
+                    "scope": "auth",
+                    "redirect_url": "trackfund://mono/callback",
+                    "reference": "server-generated-reference",
+                    "status": "pending"
+                  }
+                }
               }
             }
           },
-          "401": { "description": "Unauthorized" }
+          "401": {
+            "description": "Unauthorized"
+          },
+          "422": {
+            "description": "Missing, conflicting or non-allowed callback, or incomplete user profile"
+          },
+          "502": {
+            "description": "Provider failure or unusable link response"
+          },
+          "503": {
+            "description": "Session storage unavailable"
+          },
+          "504": {
+            "description": "Provider timeout"
+          }
         }
       }
     },
@@ -409,11 +496,21 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "name": { "type": "string" },
-                  "targetAmount": { "type": "integer" },
-                  "currency": { "type": "string" }
+                  "name": {
+                    "type": "string"
+                  },
+                  "targetAmount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  }
                 },
-                "required": ["name", "targetAmount", "currency"]
+                "required": [
+                  "name",
+                  "targetAmount",
+                  "currency"
+                ]
               },
               "example": {
                 "name": "School Fund",
@@ -433,8 +530,16 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked access token"
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/funds/{id}": {
@@ -445,7 +550,9 @@
             "name": "id",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -464,8 +571,22 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked access token"
+          },
+          "403": {
+            "description": "Fund belongs to another user"
+          },
+          "404": {
+            "description": "Fund not found or legacy fund has no verified owner"
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/funds/{id}/contributions": {
@@ -476,7 +597,9 @@
             "name": "id",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -486,10 +609,17 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "amount": { "type": "integer" },
-                  "contributor": { "type": "string" }
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "contributor": {
+                    "type": "string"
+                  }
                 },
-                "required": ["amount", "contributor"]
+                "required": [
+                  "amount",
+                  "contributor"
+                ]
               },
               "example": {
                 "amount": 5000,
@@ -508,8 +638,22 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked access token"
+          },
+          "403": {
+            "description": "Fund belongs to another user"
+          },
+          "404": {
+            "description": "Fund not found or legacy fund has no verified owner"
           }
-        }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     }
   }

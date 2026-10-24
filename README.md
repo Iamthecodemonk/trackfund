@@ -27,6 +27,31 @@ go run ./cmd/api
 
 The API listens on `http://localhost:3000` by default. Set `PORT` to change it.
 
+## Secure runtime configuration
+
+Set JWT_SECRET to a randomly generated value of at least 32 bytes before starting.
+There is no fallback signing secret. Startup validates configuration before opening
+network connections. Changing the JWT secret invalidates existing signed tokens.
+
+For Docker Compose, copy .env.example to .env and fill in the secret and provider
+settings. Compose reads .env and passes the declared settings into the API
+container. The Go binary and run.ps1 do not read .env; configure their process
+environment explicitly. run.ps1 preserves caller-supplied SMTP and JWT settings.
+
+Supply SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, and SMTP_FROM to enable email.
+Partial SMTP configuration is rejected. Development without SMTP uses the existing
+OTP log sender; production (ENV=production) requires SMTP. Mono debug logging
+defaults to false and cannot be enabled in production.
+
+Rotate the SMTP passwords previously embedded in configuration and the startup
+script at your mail provider, and replace the deployed JWT secret. Update hosting
+secrets and restart the service. Removing values from source does not revoke them
+or remove them from Git history. Never commit replacement credentials.
+
+Compose PostgreSQL credentials and run.ps1 database defaults are for local use
+only. Production must supply database/Redis settings through its hosting environment
+and must not use this local Compose stack as-is.
+
 ## Docker
 
 ```bash
@@ -35,7 +60,7 @@ docker compose up --build
 
 The compose stack starts:
 
-- `api` on `http://localhost:3000`
+- `api` on `http://localhost:3005`
 - `postgres` on `localhost:5432`
 - `redis` on `localhost:6379`
 
@@ -112,3 +137,16 @@ Content-Type: application/json
 ```http
 GET /funds/{id}
 ```
+
+## Fund ownership
+
+All three existing fund endpoints require a Bearer access token. Creation stores
+an owner ID from the authenticated session in the fund.created event. Client-supplied
+userId/ownerId fields cannot assign ownership. Reads and contributions verify that
+creation event before using summaries or appending events. Other users receive
+403; missing funds and legacy ownerless funds receive 404. No admin bypass is provided.
+
+This is an additive JSON event change with no schema migration. Existing ownerless
+events remain intact and inaccessible. They need a separately reviewed ownership
+backfill based on verified records; do not assign them to the first caller.
+Existing success payloads are preserved in this security step.

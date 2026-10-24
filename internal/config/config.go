@@ -1,6 +1,9 @@
 package config
 
 import (
+	"fmt"
+	"net/mail"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -25,13 +28,14 @@ type Config struct {
 	SMTPFrom   string
 	SMTPUseTLS bool
 	// Mono (open banking) config
-	MonoPublicKey     string
-	MonoSecretKey     string
-	MonoBaseURL       string
-	MonoCallbackURL   string
-	MonoTimeoutSecs   int
-	MonoWebhookSecret string
-	MonoDebugLogging  bool
+	MonoPublicKey           string
+	MonoSecretKey           string
+	MonoBaseURL             string
+	MonoCallbackURL         string
+	MonoAllowedRedirectURLs []string
+	MonoTimeoutSecs         int
+	MonoWebhookSecret       string
+	MonoDebugLogging        bool
 	// App runtime
 	Env      string
 	LogLevel string
@@ -41,29 +45,30 @@ func Load() Config {
 	port := getenv("PORT", "3000")
 
 	return Config{
-		Port:              port,
-		JWTSecret:         getenv("JWT_SECRET", "demo232@@@"),
-		DatabaseURL:       getenv("DATABASE_URL", "postgres://trackfund:trackfund@localhost:5432/trackfund?sslmode=disable"),
-		RedisAddr:         getenv("REDIS_ADDR", "localhost:6379"),
-		RedisPass:         os.Getenv("REDIS_PASSWORD"),
-		RedisDB:           getenvInt("REDIS_DB", 0),
-		JobsRedisAddr:     getenv("JOBS_REDIS_ADDR", getenv("REDIS_ADDR", "localhost:6379")),
-		JobsRedisDB:       getenvInt("JOBS_REDIS_DB", getenvIntEnvFallback("REDIS_DB", 0)),
-		SMTPHost:          getenv("SMTP_HOST", "mail.privateemail.com"),
-		SMTPPort:          getenv("SMTP_PORT", "465"),
-		SMTPUser:          getenv("SMTP_USER", "noreply@skills4export.com"),
-		SMTPPass:          getenv("SMTP_PASS", "iT%Dd5cvvif-wR2"),
-		SMTPFrom:          getenv("SMTP_FROM", "noreply@skills4export.com"),
-		MonoPublicKey:     os.Getenv("MONO_PUBLIC_KEY"),
-		MonoSecretKey:     os.Getenv("MONO_SECRET_KEY"),
-		MonoBaseURL:       os.Getenv("MONO_BASE_URL"),
-		MonoCallbackURL:   os.Getenv("MONO_CALLBACK_URL"),
-		MonoTimeoutSecs:   getenvInt("MONO_TIMEOUT_SECONDS", 30),
-		MonoWebhookSecret: getenv("MONO_WEBHOOK_SECRET", ""),
-		MonoDebugLogging:  getenvBool("MONO_DEBUG_LOGGING", strings.EqualFold(getenv("ENV", "development"), "development")),
-		SMTPUseTLS:        getenvBool("SMTP_USE_TLS", false),
-		Env:               getenv("ENV", "development"),
-		LogLevel:          getenv("LOG_LEVEL", "info"),
+		Port:                    port,
+		JWTSecret:               os.Getenv("JWT_SECRET"),
+		DatabaseURL:             getenv("DATABASE_URL", "postgres://trackfund:trackfund@localhost:5432/trackfund?sslmode=disable"),
+		RedisAddr:               getenv("REDIS_ADDR", "localhost:6379"),
+		RedisPass:               os.Getenv("REDIS_PASSWORD"),
+		RedisDB:                 getenvInt("REDIS_DB", 0),
+		JobsRedisAddr:           getenv("JOBS_REDIS_ADDR", getenv("REDIS_ADDR", "localhost:6379")),
+		JobsRedisDB:             getenvInt("JOBS_REDIS_DB", getenvIntEnvFallback("REDIS_DB", 0)),
+		SMTPHost:                os.Getenv("SMTP_HOST"),
+		SMTPPort:                getenv("SMTP_PORT", "465"),
+		SMTPUser:                os.Getenv("SMTP_USER"),
+		SMTPPass:                os.Getenv("SMTP_PASS"),
+		SMTPFrom:                os.Getenv("SMTP_FROM"),
+		MonoPublicKey:           os.Getenv("MONO_PUBLIC_KEY"),
+		MonoSecretKey:           os.Getenv("MONO_SECRET_KEY"),
+		MonoBaseURL:             strings.TrimRight(getenv("MONO_BASE_URL", "https://api.withmono.com/v2"), "/"),
+		MonoCallbackURL:         strings.TrimSpace(os.Getenv("MONO_CALLBACK_URL")),
+		MonoAllowedRedirectURLs: splitURLs(os.Getenv("MONO_ALLOWED_REDIRECT_URLS")),
+		MonoTimeoutSecs:         getenvInt("MONO_TIMEOUT_SECONDS", 30),
+		MonoWebhookSecret:       getenv("MONO_WEBHOOK_SECRET", ""),
+		MonoDebugLogging:        getenvBool("MONO_DEBUG_LOGGING", false),
+		SMTPUseTLS:              getenvBool("SMTP_USE_TLS", false),
+		Env:                     getenv("ENV", "development"),
+		LogLevel:                getenv("LOG_LEVEL", "info"),
 	}
 }
 
@@ -105,4 +110,119 @@ func getenvBool(key string, fallback bool) bool {
 	default:
 		return fallback
 	}
+}
+
+// Validate rejects unsafe settings before opening network connections.
+// Errors name configuration fields without exposing their values.
+func (c Config) Validate() error {
+	if err := c.validateMono(); err != nil {
+		return err
+	}
+	if len(strings.TrimSpace(c.JWTSecret)) < 32 {
+		return fmt.Errorf("JWT_SECRET must contain at least 32 non-padding bytes")
+	}
+	switch strings.ToLower(c.Env) {
+	case "development", "test", "production":
+	default:
+		return fmt.Errorf("ENV must be development, test, or production")
+	}
+	port, err := strconv.Atoi(c.Port)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("PORT must be between 1 and 65535")
+	}
+	smtpConfigured := c.SMTPHost != "" || c.SMTPUser != "" || c.SMTPPass != "" || c.SMTPFrom != ""
+	if smtpConfigured {
+		for _, field := range []struct{ name, value string }{
+			{"SMTP_HOST", c.SMTPHost}, {"SMTP_USER", c.SMTPUser},
+			{"SMTP_PASS", c.SMTPPass}, {"SMTP_FROM", c.SMTPFrom},
+		} {
+			if strings.TrimSpace(field.value) == "" {
+				return fmt.Errorf("%s is required when SMTP is configured", field.name)
+			}
+			if strings.ContainsAny(field.value, "\r\n") {
+				return fmt.Errorf("%s must not contain line breaks", field.name)
+			}
+		}
+		if _, err := mail.ParseAddress(c.SMTPFrom); err != nil {
+			return fmt.Errorf("SMTP_FROM must be a valid email address")
+		}
+		smtpPort, err := strconv.Atoi(c.SMTPPort)
+		if err != nil || smtpPort < 1 || smtpPort > 65535 {
+			return fmt.Errorf("SMTP_PORT must be between 1 and 65535")
+		}
+	}
+	if strings.EqualFold(c.Env, "production") {
+		if !smtpConfigured {
+			return fmt.Errorf("SMTP must be configured in production; development OTP logging is forbidden")
+		}
+		if c.MonoDebugLogging {
+			return fmt.Errorf("MONO_DEBUG_LOGGING must be false in production")
+		}
+	}
+	return nil
+}
+
+func splitURLs(raw string) []string {
+	var urls []string
+	for _, value := range strings.Split(raw, ",") {
+		if value = strings.TrimSpace(value); value != "" {
+			urls = append(urls, value)
+		}
+	}
+	return urls
+}
+
+// ValidMonoRedirect accepts a web callback or the mobile app's registered deep link.
+func ValidMonoRedirect(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.User != nil || u.Fragment != "" || u.RawQuery != "" || u.Opaque != "" {
+		return false
+	}
+	if raw == "trackfund://mono/callback" {
+		return true
+	}
+	return u.Scheme == "https" && u.Hostname() != "" && u.Hostname() != "localhost" && !strings.ContainsAny(raw, "\r\n")
+}
+
+func (c Config) AllowsMonoRedirect(raw string) bool {
+	if !ValidMonoRedirect(raw) {
+		return false
+	}
+	if raw == c.MonoCallbackURL {
+		return true
+	}
+	for _, allowed := range c.MonoAllowedRedirectURLs {
+		if raw == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func (c Config) validateMono() error {
+	for _, callback := range append(append([]string{}, c.MonoAllowedRedirectURLs...), c.MonoCallbackURL) {
+		if callback != "" && !ValidMonoRedirect(callback) {
+			return fmt.Errorf("Mono callbacks must be HTTPS URLs without query/fragment or trackfund://mono/callback")
+		}
+	}
+	if c.MonoSecretKey == "" {
+		return nil
+	}
+	if strings.TrimSpace(c.MonoSecretKey) == "" || strings.ContainsAny(c.MonoSecretKey, "\r\n") {
+		return fmt.Errorf("MONO_SECRET_KEY is invalid")
+	}
+	u, err := url.Parse(c.MonoBaseURL)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.TrimRight(u.Path, "/") != "/v2" {
+		return fmt.Errorf("MONO_BASE_URL must be an HTTPS v2 API URL without credentials, query or fragment")
+	}
+	if c.MonoTimeoutSecs < 1 || c.MonoTimeoutSecs > 120 {
+		return fmt.Errorf("MONO_TIMEOUT_SECONDS must be between 1 and 120")
+	}
+	if strings.TrimSpace(c.MonoWebhookSecret) == "" {
+		return fmt.Errorf("MONO_WEBHOOK_SECRET is required when Mono is configured")
+	}
+	if c.MonoCallbackURL == "" && len(c.MonoAllowedRedirectURLs) == 0 {
+		return fmt.Errorf("Set MONO_CALLBACK_URL or MONO_ALLOWED_REDIRECT_URLS when Mono is configured")
+	}
+	return nil
 }

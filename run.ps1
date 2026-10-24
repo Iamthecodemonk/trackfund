@@ -3,22 +3,21 @@ $wslIp = (wsl hostname -I).Split(" ")[0].Trim()
 
 $env:DATABASE_URL="postgres://postgres:root@localhost:5433/trackfund?sslmode=disable"
 $env:REDIS_ADDR="$wslIp:6379"
-$env:JWT_SECRET="change-me-in-production"
+if (-not $env:JWT_SECRET -or $env:JWT_SECRET.Trim().Length -lt 32) {
+ throw "Set JWT_SECRET to a random secret of at least 32 bytes before running this script."
+}
 $env:PORT="3000"
 
-$env:SMTP_HOST  = "mail.privateemail.com"
-$env:SMTP_PORT  = "465"
-$env:SMTP_USER  = "noreply@skills4export.com"
-$env:SMTP_PASS  = '!123skills4exporT'
-$env:SMTP_FROM  = "noreply@skills4export.com"
+# SMTP settings must be supplied through the process environment.
+# With no SMTP settings, development uses the existing OTP log sender.
 # Mono config
 if (-not $env:MONO_PUBLIC_KEY) { Write-Warning "MONO_PUBLIC_KEY is not set." }
 if (-not $env:MONO_SECRET_KEY) { Write-Warning "MONO_SECRET_KEY is not set." }
-if (-not $env:MONO_BASE_URL) { Write-Warning "MONO_BASE_URL is not set. Use the Mono sandbox URL in development and live URL in production." }
+if (-not $env:MONO_BASE_URL) { $env:MONO_BASE_URL = "https://api.withmono.com/v2" }
 if (-not $env:MONO_CALLBACK_URL) { Write-Warning "MONO_CALLBACK_URL is not set. Flutter must send redirect_url/callback_url when creating a Mono link session." }
 if (-not $env:MONO_WEBHOOK_SECRET) { $env:MONO_WEBHOOK_SECRET = "" }
 if (-not $env:MONO_TIMEOUT_SECONDS) { $env:MONO_TIMEOUT_SECONDS = "60" }
-if (-not $env:MONO_DEBUG_LOGGING) { $env:MONO_DEBUG_LOGGING = "true" }
+if (-not $env:MONO_DEBUG_LOGGING) { $env:MONO_DEBUG_LOGGING = "false" }
 
 # Jobs Redis (if different from REDIS_ADDR)
 $env:JOBS_REDIS_ADDR = "$wslIp:6379"

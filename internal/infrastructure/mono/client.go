@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -62,10 +63,10 @@ func NewClientWithTimeout(baseURL, secret, pub string, timeout time.Duration) *C
 		timeout = 30 * time.Second
 	}
 	return &Client{
-		BaseURL:    baseURL,
+		BaseURL:    strings.TrimRight(baseURL, "/"),
 		SecretKey:  secret,
 		PublicKey:  pub,
-		HTTPClient: &http.Client{Timeout: timeout},
+		HTTPClient: &http.Client{Timeout: timeout, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }},
 	}
 }
 
@@ -102,7 +103,6 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body any, o
 			slog.String("url", req.URL.String()),
 			slog.Any("headers", sanitizedRequestHeaders(req.Header)),
 			slog.Bool("secret_key_configured", c.SecretKey != ""),
-			slog.String("body", buf.String()),
 		)
 	}
 	resp, err := c.HTTPClient.Do(req)
@@ -113,7 +113,10 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body any, o
 		return err
 	}
 	defer resp.Body.Close()
-	respBody, readErr := io.ReadAll(resp.Body)
+	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024*1024+1))
+	if len(respBody) > 1024*1024 {
+		return fmt.Errorf("Mono response exceeds 1 MiB")
+	}
 	if readErr != nil {
 		return readErr
 	}
@@ -122,7 +125,6 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body any, o
 			slog.String("method", method),
 			slog.String("url", req.URL.String()),
 			slog.Int("status", resp.StatusCode),
-			slog.String("body", string(respBody)),
 		)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -246,7 +248,7 @@ func (c *Client) CreateLinkSession(ctx context.Context, payload map[string]any) 
 	if err := c.doRequest(ctx, "POST", "/accounts/initiate", payload, &resp); err != nil {
 		return InitiateResponse{}, err
 	}
-	if resp.Data.ClientToken == "" && resp.Data.MonoURL == "" {
+	if strings.TrimSpace(resp.Data.ClientToken) == "" && strings.TrimSpace(resp.Data.MonoURL) == "" {
 		return InitiateResponse{}, ErrInvalidLinkSessionResponse
 	}
 	return resp, nil
