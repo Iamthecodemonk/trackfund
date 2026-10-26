@@ -1,0 +1,19 @@
+$kind: http-request
+name: https://thetrackiq.co/api/auth/register
+description: ""
+url: https://thetrackiq.co/api/auth/register
+method: POST
+body:
+  type: json
+  content: "{\r
+
+    \  \"fullName\": \"Simon Adewumi\",\r
+
+    \  \"email\": \"iamthecodemonk@gmail.com\",\r
+
+    \  \"phone\": \"07034097104\",\r
+
+    \  \"password\": \"Str0ngP@ssw0rd\"\r
+
+    }"
+order: 1000
