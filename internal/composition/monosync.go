@@ -3,6 +3,7 @@ package composition
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -32,8 +33,11 @@ func startMonoSync(ctx context.Context, app *App, client *asynq.Client, interval
 
 				task := asynq.NewTask(TypeSyncAccount, payload)
 
-				_, err = client.EnqueueContext(ctx, task, asynq.MaxRetry(3), asynq.ProcessIn(1*time.Second))
+				_, err = client.EnqueueContext(ctx, task, asynq.MaxRetry(3), asynq.Unique(5*time.Minute), asynq.ProcessIn(1*time.Second))
 				if err != nil {
+					if errors.Is(err, asynq.ErrDuplicateTask) {
+						continue
+					}
 					app.Logger.Error("enqueue mono sync task failed", err, slog.String("account_id", acc.MonoAccountID))
 					continue
 				}

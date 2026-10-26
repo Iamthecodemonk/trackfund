@@ -90,6 +90,6 @@ CREATE INDEX IF NOT EXISTS mono_link_sessions_user_idx ON mono_link_sessions (us
 `
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
-	_, err := pool.Exec(ctx, schema)
+	_, err := pool.Exec(ctx, schema+monoWebhookSchema)
 	return err
 }

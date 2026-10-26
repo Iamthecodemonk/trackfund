@@ -8,106 +8,14 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
-	"time"
 
 	authapp "trackfund/internal/application/auth"
+	monoapp "trackfund/internal/application/mono"
 	monoclient "trackfund/internal/infrastructure/mono"
 
 	"github.com/go-chi/chi/v5"
 )
-
-// monoWebhook receives webhook events from Mono, verifies signature, and persists accounts/transactions.
-func (s *Server) monoWebhook(w http.ResponseWriter, r *http.Request) {
-	secret := os.Getenv("MONO_WEBHOOK_SECRET")
-	if secret == "" {
-		http.Error(w, "webhook secret not configured", http.StatusInternalServerError)
-		return
-	}
-	// Mono sends the webhook secret in the `mono-webhook-secret` header for verification
-	hdr := r.Header.Get("mono-webhook-secret")
-	if hdr == "" {
-		http.Error(w, "missing webhook secret header", http.StatusUnauthorized)
-		return
-	}
-	if hdr != secret {
-		http.Error(w, "invalid webhook secret", http.StatusUnauthorized)
-		return
-	}
-	var payload map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
-		return
-	}
-
-	// simple event dispatcher based on `event` field per Mono webhook format
-	typ, _ := payload["event"].(string)
-	data, _ := payload["data"].(map[string]any)
-	ctx := r.Context()
-
-	if s.app == nil || s.app.MonoRepo == nil {
-		http.Error(w, "mono repository not configured", http.StatusInternalServerError)
-		return
-	}
-
-	switch typ {
-	case "mono.events.account_connected", "mono.events.account_updated", "mono.events.account_created":
-		// expect data.account
-		if acct, ok := data["account"].(map[string]any); ok {
-			// generate an internal id
-			id, _ := authapp.RandomID()
-			userID, _ := acct["user_id"].(string)
-			monoAccountID, _ := acct["id"].(string)
-			provider, _ := acct["provider"].(string)
-			accountName, _ := acct["name"].(string)
-			accountNumber, _ := acct["account_number"].(string)
-			bankCode, _ := acct["bank_code"].(string)
-			currency, _ := acct["currency"].(string)
-			// metadata: keep full account object
-			_ = s.app.MonoRepo.UpsertAccount(ctx, id, userID, monoAccountID, provider, accountName, accountNumber, bankCode, currency, acct)
-		}
-	case "mono.events.transactions_created", "mono.events.transaction_created", "mono.events.transactions.created":
-		// data.transactions is expected
-		if arr, ok := data["transactions"].([]any); ok {
-			for _, v := range arr {
-				if tx, ok := v.(map[string]any); ok {
-					transactionID, _ := tx["id"].(string)
-					exists, err := s.app.MonoRepo.TransactionExists(ctx, transactionID)
-					if err != nil {
-						// log and continue
-						continue
-					}
-					if exists {
-						continue
-					}
-					// find mono_account id mapping: Mono provides account id in tx.account_id; need to query mono_accounts.id
-					monoAccountIDRaw, _ := tx["account_id"].(string)
-					internalAccountID, err := s.app.MonoRepo.GetInternalAccountIDByMonoID(ctx, monoAccountIDRaw)
-					if err != nil || internalAccountID == "" {
-						// skip if unknown account
-						continue
-					}
-					amountFloat, _ := tx["amount"].(float64)
-					amount := int64(amountFloat)
-					currency, _ := tx["currency"].(string)
-					paidAtStr, _ := tx["paid_at"].(string)
-					var paidAt time.Time
-					if paidAtStr != "" {
-						paidAt, _ = time.Parse(time.RFC3339, paidAtStr)
-					}
-					description, _ := tx["description"].(string)
-					id, _ := authapp.RandomID()
-					_ = s.app.MonoRepo.InsertTransaction(ctx, id, internalAccountID, transactionID, amount, currency, paidAt, description, tx)
-				}
-			}
-		}
-	default:
-		// ignore unknown events
-	}
-
-	w.WriteHeader(http.StatusOK)
-}
 
 // createMonoLinkSession builds provider-owned fields from the authenticated user.
 func (s *Server) createMonoLinkSession(w http.ResponseWriter, r *http.Request) {
@@ -293,14 +201,14 @@ func (s *Server) completeMonoAccountLink(w http.ResponseWriter, r *http.Request,
 	if len(strings.TrimSpace(string(body))) == 0 {
 		payload = map[string]any{}
 	} else if err := json.Unmarshal(body, &payload); err != nil {
-		s.logMonoError(logName+".invalid_json", err, slog.String("raw_payload", string(body)))
+		s.logMonoError(logName+".invalid_json", err)
 		writeAPIStepError(w, http.StatusBadRequest, "exchange_code", "invalid_json", "Request body must be valid JSON", err.Error())
 		return
 	}
 
 	var req monoAccountLinkRequest
 	if err := json.Unmarshal(body, &req); err != nil && len(strings.TrimSpace(string(body))) > 0 {
-		s.logMonoError(logName+".mapping_failed", err, slog.Any("payload", payload))
+		s.logMonoError(logName+".mapping_failed", err)
 		writeAPIStepError(w, http.StatusBadRequest, "exchange_code", "request_mapping_error", "Could not map Mono account request", err.Error())
 		return
 	}
@@ -320,7 +228,6 @@ func (s *Server) completeMonoAccountLink(w http.ResponseWriter, r *http.Request,
 	s.logMonoInfo(logName+".incoming",
 		slog.String("method", r.Method),
 		slog.String("path", r.URL.Path),
-		slog.Any("payload", payload),
 	)
 	s.logMonoInfo(logName+".required_parameters",
 		slog.Bool("code_present", req.Code != ""),
@@ -353,7 +260,6 @@ func (s *Server) completeMonoAccountLink(w http.ResponseWriter, r *http.Request,
 	s.logMonoInfo(logName+".mono_request",
 		slog.String("method", http.MethodPost),
 		slog.String("url", monoURL),
-		slog.Any("payload", map[string]any{"code": req.Code}),
 	)
 
 	resp, err := s.app.MonoClient.ExchangeCode(ctx, req.Code)
@@ -372,7 +278,6 @@ func (s *Server) completeMonoAccountLink(w http.ResponseWriter, r *http.Request,
 				slog.String("method", monoErr.Method),
 				slog.String("url", monoErr.URL),
 				slog.Int("status", monoErr.StatusCode),
-				slog.String("raw_body", monoErr.Body),
 			)
 			writeAPIStepError(w, monoErr.StatusCode, "exchange_code", "mono_error", monoResponseMessage(monoErr.Body), monoErr.Body)
 			return
@@ -382,7 +287,6 @@ func (s *Server) completeMonoAccountLink(w http.ResponseWriter, r *http.Request,
 			s.logMonoError(logName+".mono_parse_error", err,
 				slog.String("method", parseErr.Method),
 				slog.String("url", parseErr.URL),
-				slog.String("raw_body", parseErr.Body),
 			)
 			writeAPIStepError(w, http.StatusBadGateway, "exchange_code", "mono_parse_error", "Could not parse Mono response", parseErr.Body)
 			return
@@ -481,8 +385,40 @@ func (s *Server) getMonoAccountTransactions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	acc, ok, err := s.app.MonoRepo.GetAccountByID(r.Context(), id)
-	if err != nil || !ok || acc.UserID != cur.ID {
-		writeError(w, http.StatusUnauthorized, nil)
+	if err != nil {
+		writeAPIError(w, 503, "mono_accounts_unavailable", "Could not load account", "")
+		return
+	}
+	if !ok {
+		writeAPIError(w, 404, "account_not_found", "Account was not found", "")
+		return
+	}
+	if acc.UserID != cur.ID {
+		writeAPIError(w, 403, "account_forbidden", "Account belongs to another user", "")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	var readiness struct {
+		Meta monoapp.Meta `json:"meta"`
+	}
+	if json.Unmarshal(acc.Metadata, &readiness) != nil {
+		writeAPIError(w, 503, "mono_data_unavailable", "Could not read account readiness", "")
+		return
+	}
+	if readiness.Meta.DataStatus == "FAILED" {
+		writeAPIError(w, 502, "mono_data_failed", "Mono could not retrieve account data", "")
+		return
+	}
+	if readiness.Meta.DataStatus == "DISCONNECTED" {
+		writeAPIError(w, 409, "mono_account_disconnected", "The bank account has been disconnected", "")
+		return
+	}
+	if readiness.Meta.DataStatus == "UNAVAILABLE" || (readiness.Meta.DataStatus == "PARTIAL" && !monoapp.TransactionsAvailable(acc.Metadata)) {
+		writeAPISuccess(w, 202, map[string]any{"status": "unavailable", "dataStatus": readiness.Meta.DataStatus, "transactions": []any{}})
+		return
+	}
+	if !monoapp.TransactionsAvailable(acc.Metadata) || acc.LastSyncedAt == nil || (acc.LastEventAt != nil && acc.LastSyncedAt.Before(*acc.LastEventAt)) {
+		writeAPISuccess(w, http.StatusAccepted, map[string]any{"status": "syncing", "transactions": []any{}})
 		return
 	}
 	txs, err := s.app.MonoRepo.ListTransactionsByAccountID(r.Context(), id)
@@ -490,5 +426,5 @@ func (s *Server) getMonoAccountTransactions(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, txs)
+	writeAPISuccess(w, http.StatusOK, txs)
 }

@@ -6,6 +6,60 @@
     "description": "Minimal OpenAPI spec for TrackFund"
   },
   "paths": {
+    "/api/mono/link-session/{reference}": {
+      "get": {
+        "summary": "Get the authenticated user?s Mono connection session",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "reference",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connection and transaction-readiness status",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "reference": "saved-reference",
+                    "status": "connected",
+                    "accountId": "internal-account-id",
+                    "dataStatus": "AVAILABLE",
+                    "availableData": [
+                      "transactions",
+                      "balance"
+                    ],
+                    "transactionsReady": false,
+                    "syncStatus": "syncing"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "404": {
+            "description": "Session missing or owned by another user"
+          },
+          "503": {
+            "description": "Session storage temporarily unavailable"
+          }
+        }
+      }
+    },
     "/api/auth/register": {
       "post": {
         "summary": "Register user",
@@ -465,25 +519,139 @@
     "/api/mono/accounts/{id}/transactions": {
       "get": {
         "summary": "Get transactions for an internal mono account id",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ],
-        "responses": { "200": { "description": "ok", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MonoTransaction" } }, "example": [ { "transactionId": "tx_1", "amount": 5000, "currency": "NGN", "paidAt": "2026-06-20T00:00:00Z", "description": "Test payment" } ] } } }, "401": { "description": "Unauthorized" } }
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MonoTransaction"
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": [
+                    {
+                      "transactionId": "tx_1",
+                      "amount": 5000,
+                      "currency": "NGN",
+                      "paidAt": "2026-06-20T00:00:00Z",
+                      "description": "Test payment"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Account data still syncing or unavailable",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "status": "syncing",
+                    "transactions": []
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Account owned by another user"
+          },
+          "404": {
+            "description": "Account not found"
+          },
+          "409": {
+            "description": "Bank account disconnected"
+          },
+          "502": {
+            "description": "Provider data retrieval failed"
+          },
+          "503": {
+            "description": "Account storage unavailable"
+          }
+        },
+        "description": "Verify account ownership and readiness before returning cached transactions. 202 means syncing/unavailable; 200 with data: [] means a successful sync returned no transactions."
       }
     },
     "/api/mono/webhook": {
       "post": {
         "summary": "Mono webhook endpoint (public)",
-        "description": "Mono will POST events here. The server verifies the `mono-webhook-secret` header.",
+        "description": "Public endpoint authenticated only by mono-webhook-secret. Persist events before 200; duplicate event IDs with identical canonical payloads return 200. PostgreSQL worker processes events transactionally with retries. Do not send a Bearer token.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/MonoWebhook" },
-              "example": { "event": "mono.events.account_connected", "event_id": "evt_123", "timestamp": "2026-06-22T12:00:00Z", "data": { "account": { "id": "mono_acc_abc", "user_id": "user_1", "provider": "mono", "name": "My Account", "account_number": "0123456789", "bank_code": "001", "currency": "NGN" } } }
+              "schema": {
+                "$ref": "#/components/schemas/MonoWebhook"
+              },
+              "example": {
+                "event": "mono.events.account_connected",
+                "event_id": "unique-event-id",
+                "timestamp": "2026-10-26T09:00:00Z",
+                "data": {
+                  "id": "provider-account-id",
+                  "meta": {
+                    "ref": "saved-reference",
+                    "data_status": "PROCESSING"
+                  }
+                }
+              }
             }
           }
         },
-        "responses": { "200": { "description": "ok" }, "401": { "description": "invalid webhook secret" } }
+        "responses": {
+          "200": {
+            "description": "Durably received; business processing continues asynchronously"
+          },
+          "400": {
+            "description": "Invalid event envelope"
+          },
+          "401": {
+            "description": "Missing or incorrect webhook secret"
+          },
+          "409": {
+            "description": "Same event ID used for a different payload"
+          },
+          "413": {
+            "description": "Payload exceeds 1 MiB"
+          },
+          "503": {
+            "description": "Storage or secret configuration unavailable; retry"
+          }
+        },
+        "parameters": [
+          {
+            "name": "mono-webhook-secret",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/funds": {

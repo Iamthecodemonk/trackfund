@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -229,6 +230,7 @@ type MonoAccount struct {
 }
 
 type TransactionsResponse struct {
+	Next string `json:"-"`
 	Data struct {
 		Transactions []MonoTransaction `json:"transactions"`
 	} `json:"data"`
@@ -273,10 +275,87 @@ func (c *Client) GetAccounts(ctx context.Context) (TransactionsResponse, error) 
 }
 
 func (c *Client) GetTransactions(ctx context.Context, monoAccountID string) (TransactionsResponse, error) {
-	var resp TransactionsResponse
-	path := fmt.Sprintf("/accounts/%s/transactions", monoAccountID)
-	if err := c.doRequest(ctx, "GET", path, nil, &resp); err != nil {
-		return TransactionsResponse{}, err
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	var all TransactionsResponse
+	all.Data.Transactions = []MonoTransaction{}
+	for page := 1; page <= 100; page++ {
+		var batch TransactionsResponse
+		path := fmt.Sprintf("/accounts/%s/transactions?paginate=true&limit=100&page=%d", url.PathEscape(monoAccountID), page)
+		if err := c.doRequest(ctx, http.MethodGet, path, nil, &batch); err != nil {
+			return TransactionsResponse{}, err
+		}
+		all.Data.Transactions = append(all.Data.Transactions, batch.Data.Transactions...)
+		if batch.Next == "" {
+			return all, nil
+		}
 	}
-	return resp, nil
+	return TransactionsResponse{}, fmt.Errorf("Mono transaction pagination exceeded 100 pages")
+}
+
+// Mono v2 uses a data array with top-level meta; legacy responses wrap
+// transactions under data. Missing/null collections are never treated as empty.
+func (r *TransactionsResponse) UnmarshalJSON(body []byte) error {
+	var wrapper struct {
+		Data json.RawMessage `json:"data"`
+		Meta struct {
+			Next string `json:"next"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal(body, &wrapper); err != nil {
+		return err
+	}
+	raw := bytes.TrimSpace(wrapper.Data)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return fmt.Errorf("missing Mono transaction data")
+	}
+	var transactions []MonoTransaction
+	r.Next = wrapper.Meta.Next
+	if raw[0] == '[' {
+		if err := json.Unmarshal(raw, &transactions); err != nil {
+			return err
+		}
+	} else {
+		var nested struct {
+			Transactions []MonoTransaction `json:"transactions"`
+			Paging       struct {
+				Next string `json:"next"`
+			} `json:"paging"`
+		}
+		if err := json.Unmarshal(raw, &nested); err != nil {
+			return err
+		}
+		if nested.Transactions == nil {
+			return fmt.Errorf("missing Mono transaction collection")
+		}
+		transactions = nested.Transactions
+		if r.Next == "" {
+			r.Next = nested.Paging.Next
+		}
+	}
+	r.Data.Transactions = transactions
+	return nil
+}
+func (t *MonoTransaction) UnmarshalJSON(body []byte) error {
+	type transaction MonoTransaction
+	var wrapper struct {
+		transaction
+		MongoID   string `json:"_id"`
+		Date      string `json:"date"`
+		Narration string `json:"narration"`
+	}
+	if err := json.Unmarshal(body, &wrapper); err != nil {
+		return err
+	}
+	*t = MonoTransaction(wrapper.transaction)
+	if t.ID == "" {
+		t.ID = wrapper.MongoID
+	}
+	if t.PaidAt == "" {
+		t.PaidAt = wrapper.Date
+	}
+	if t.Description == "" {
+		t.Description = wrapper.Narration
+	}
+	return nil
 }

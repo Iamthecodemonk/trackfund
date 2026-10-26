@@ -37,6 +37,7 @@ type App struct {
 	Closer       func()
 	MonoRepo     *postgres.MonoRepository
 	MonoSessions ports.MonoSessionStore
+	MonoWebhooks ports.MonoWebhookStore
 	MonoClient   *monoclient.Client
 	Config       config.Config
 }
@@ -87,12 +88,13 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 		_ = redisClient.Close()
 		db.Close()
 	})
-	// start Asynq worker and enqueue background sync every 5 minutes
+	// Check every 15 seconds for ready accounts due for a five-minute sync.
 	if client, err := StartAsynqWorker(bgCtx, cfg.RedisAddr, app); err == nil {
-		go startMonoSync(bgCtx, app, client, 5*time.Minute)
+		go startMonoSync(bgCtx, app, client, 15*time.Second)
 	}
 	app.Logger = lg
 	app.Config = cfg
+	app.MonoWebhooks = monoRepo
 	// replace auth service with configured email sender
 	app.Auth = authapp.NewService(authRepo, emailSender, authapp.Config{
 		JWTSecret:         cfg.JWTSecret,
@@ -103,6 +105,10 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 		OTPRateLimitEvery: time.Hour,
 	})
 
+	webhookDone := make(chan struct{})
+	go func() { defer close(webhookDone); startMonoWebhookWorker(bgCtx, app) }()
+	previousCloser := app.Closer
+	app.Closer = func() { cancel(); <-webhookDone; previousCloser() }
 	return app, nil
 }
 

@@ -3,8 +3,11 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
+	monoapp "trackfund/internal/application/mono"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,13 +20,22 @@ func NewMonoRepository(pool *pgxpool.Pool) *MonoRepository {
 }
 
 func (r *MonoRepository) UpsertAccount(ctx context.Context, id, userID, monoAccountID, provider, accountName, accountNumber, bankCode, currency string, metadata map[string]any) error {
-	metaJSON, _ := json.Marshal(metadata)
-	_, err := r.pool.Exec(ctx, `
+	metaJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	tag, err := r.pool.Exec(ctx, `
         INSERT INTO mono_accounts (id, user_id, mono_account_id, provider, account_name, account_number, bank_code, currency, metadata, created_at, updated_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW())
-        ON CONFLICT (mono_account_id) DO UPDATE SET user_id = EXCLUDED.user_id, provider = EXCLUDED.provider, account_name = EXCLUDED.account_name, account_number = EXCLUDED.account_number, bank_code = EXCLUDED.bank_code, currency = EXCLUDED.currency, metadata = EXCLUDED.metadata, updated_at = NOW()
+        ON CONFLICT (mono_account_id) DO UPDATE SET provider = EXCLUDED.provider, account_name = EXCLUDED.account_name, account_number = EXCLUDED.account_number, bank_code = EXCLUDED.bank_code, currency = EXCLUDED.currency, metadata = COALESCE(mono_accounts.metadata,'{}'::jsonb)||EXCLUDED.metadata, updated_at = NOW() WHERE mono_accounts.user_id=EXCLUDED.user_id
     `, id, userID, monoAccountID, provider, accountName, accountNumber, bankCode, currency, metaJSON)
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return monoapp.ErrOwnershipConflict
+	}
+	return nil
 }
 
 func (r *MonoRepository) TransactionExists(ctx context.Context, transactionID string) (bool, error) {
@@ -33,11 +45,19 @@ func (r *MonoRepository) TransactionExists(ctx context.Context, transactionID st
 }
 
 func (r *MonoRepository) InsertTransaction(ctx context.Context, id, monoAccountID, transactionID string, amount int64, currency string, paidAt time.Time, description string, raw map[string]any) error {
-	rawJSON, _ := json.Marshal(raw)
-	_, err := r.pool.Exec(ctx, `
+	rawJSON, err := json.Marshal(raw)
+	if err != nil {
+		return err
+	}
+	var accountID string
+	err = r.pool.QueryRow(ctx, `
         INSERT INTO mono_transactions (id, mono_account_id, transaction_id, amount, currency, paid_at, description, raw, created_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
-    `, id, monoAccountID, transactionID, amount, currency, paidAt, description, rawJSON)
+ ON CONFLICT(transaction_id) DO UPDATE SET transaction_id=EXCLUDED.transaction_id WHERE mono_transactions.mono_account_id=EXCLUDED.mono_account_id RETURNING mono_account_id
+    `, id, monoAccountID, transactionID, amount, currency, paidAt, description, rawJSON).Scan(&accountID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return monoapp.ErrOwnershipConflict
+	}
 	return err
 }
 
@@ -63,18 +83,20 @@ type MonoAccount struct {
 	Metadata      json.RawMessage `json:"metadata,omitempty"`
 	CreatedAt     time.Time       `json:"createdAt"`
 	UpdatedAt     time.Time       `json:"updatedAt"`
+	LastSyncedAt  *time.Time      `json:"lastSyncedAt"`
+	LastEventAt   *time.Time      `json:"-"`
 }
 
 func (r *MonoRepository) ListAccounts(ctx context.Context, userID string) ([]MonoAccount, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id, user_id, mono_account_id, provider, account_name, account_number, bank_code, currency, metadata, created_at, updated_at FROM mono_accounts WHERE user_id = $1`, userID)
+	rows, err := r.pool.Query(ctx, `SELECT id, user_id, mono_account_id, provider, account_name, COALESCE(account_number,''), COALESCE(bank_code,''), COALESCE(currency,''), metadata, created_at, updated_at,last_synced_at,last_event_at FROM mono_accounts WHERE user_id = $1`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []MonoAccount
+	out := []MonoAccount{}
 	for rows.Next() {
 		var a MonoAccount
-		if err := rows.Scan(&a.ID, &a.UserID, &a.MonoAccountID, &a.Provider, &a.AccountName, &a.AccountNumber, &a.BankCode, &a.Currency, &a.Metadata, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.UserID, &a.MonoAccountID, &a.Provider, &a.AccountName, &a.AccountNumber, &a.BankCode, &a.Currency, &a.Metadata, &a.CreatedAt, &a.UpdatedAt, &a.LastSyncedAt, &a.LastEventAt); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -84,7 +106,10 @@ func (r *MonoRepository) ListAccounts(ctx context.Context, userID string) ([]Mon
 
 func (r *MonoRepository) GetAccountByID(ctx context.Context, id string) (MonoAccount, bool, error) {
 	var a MonoAccount
-	err := r.pool.QueryRow(ctx, `SELECT id, user_id, mono_account_id, provider, account_name, account_number, bank_code, currency, metadata, created_at, updated_at FROM mono_accounts WHERE id = $1 LIMIT 1`, id).Scan(&a.ID, &a.UserID, &a.MonoAccountID, &a.Provider, &a.AccountName, &a.AccountNumber, &a.BankCode, &a.Currency, &a.Metadata, &a.CreatedAt, &a.UpdatedAt)
+	err := r.pool.QueryRow(ctx, `SELECT id, user_id, mono_account_id, provider, account_name, COALESCE(account_number,''), COALESCE(bank_code,''), COALESCE(currency,''), metadata, created_at, updated_at,last_synced_at,last_event_at FROM mono_accounts WHERE id = $1 LIMIT 1`, id).Scan(&a.ID, &a.UserID, &a.MonoAccountID, &a.Provider, &a.AccountName, &a.AccountNumber, &a.BankCode, &a.Currency, &a.Metadata, &a.CreatedAt, &a.UpdatedAt, &a.LastSyncedAt, &a.LastEventAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return MonoAccount{}, false, nil
+	}
 	if err != nil {
 		return MonoAccount{}, false, err
 	}
@@ -93,15 +118,15 @@ func (r *MonoRepository) GetAccountByID(ctx context.Context, id string) (MonoAcc
 
 // ListAllAccounts returns all mono accounts (used by background sync)
 func (r *MonoRepository) ListAllAccounts(ctx context.Context) ([]MonoAccount, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id, user_id, mono_account_id, provider, account_name, account_number, bank_code, currency, metadata, created_at, updated_at FROM mono_accounts`)
+	rows, err := r.pool.Query(ctx, `SELECT id, user_id, mono_account_id, provider, account_name, COALESCE(account_number,''), COALESCE(bank_code,''), COALESCE(currency,''), metadata, created_at, updated_at,last_synced_at,last_event_at FROM mono_accounts WHERE (metadata->'meta'->>'data_status'='AVAILABLE' OR (metadata->'meta'->>'data_status'='PARTIAL' AND metadata->'meta'->'retrieved_data' ? 'transactions')) AND (last_synced_at IS NULL OR last_synced_at<last_event_at OR last_synced_at<NOW()-INTERVAL '5 minutes')`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []MonoAccount
+	out := []MonoAccount{}
 	for rows.Next() {
 		var a MonoAccount
-		if err := rows.Scan(&a.ID, &a.UserID, &a.MonoAccountID, &a.Provider, &a.AccountName, &a.AccountNumber, &a.BankCode, &a.Currency, &a.Metadata, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.UserID, &a.MonoAccountID, &a.Provider, &a.AccountName, &a.AccountNumber, &a.BankCode, &a.Currency, &a.Metadata, &a.CreatedAt, &a.UpdatedAt, &a.LastSyncedAt, &a.LastEventAt); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -127,7 +152,7 @@ func (r *MonoRepository) ListTransactionsByAccountID(ctx context.Context, intern
 		return nil, err
 	}
 	defer rows.Close()
-	var out []MonoTransaction
+	out := []MonoTransaction{}
 	for rows.Next() {
 		var t MonoTransaction
 		if err := rows.Scan(&t.ID, &t.MonoAccountID, &t.TransactionID, &t.Amount, &t.Currency, &t.PaidAt, &t.Description, &t.Raw, &t.CreatedAt); err != nil {

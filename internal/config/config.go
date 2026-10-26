@@ -218,6 +218,9 @@ func (c Config) validateMono() error {
 	if c.MonoTimeoutSecs < 1 || c.MonoTimeoutSecs > 120 {
 		return fmt.Errorf("MONO_TIMEOUT_SECONDS must be between 1 and 120")
 	}
+	if strings.HasPrefix(c.MonoWebhookSecret, "https://") || strings.HasPrefix(c.MonoWebhookSecret, "http://") {
+		return fmt.Errorf("MONO_WEBHOOK_SECRET must be the dashboard secret, not the webhook URL")
+	}
 	if strings.TrimSpace(c.MonoWebhookSecret) == "" {
 		return fmt.Errorf("MONO_WEBHOOK_SECRET is required when Mono is configured")
 	}

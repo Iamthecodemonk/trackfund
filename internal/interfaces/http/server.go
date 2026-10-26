@@ -89,6 +89,7 @@ func (s *Server) routes() {
 			r.Group(func(prot chi.Router) {
 				prot.Use(s.requireAuth)
 				prot.Post("/link-session", s.createMonoLinkSession)
+				prot.Get("/link-session/{reference}", s.getMonoLinkStatus)
 				prot.Post("/complete-link", s.completeMonoLink)
 				prot.Post("/accounts", s.createMonoAccount)
 				prot.Get("/accounts", s.listMonoAccounts)
