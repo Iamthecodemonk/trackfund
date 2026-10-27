@@ -43,15 +43,16 @@ type User struct {
 }
 
 type RefreshToken struct {
-	ID         string
-	UserID     string
-	TokenHash  string
-	DeviceName string
-	IPAddress  string
-	UserAgent  string
-	ExpiresAt  time.Time
-	RevokedAt  *time.Time
-	CreatedAt  time.Time
+	TokenVersion *int
+	ID           string
+	UserID       string
+	TokenHash    string
+	DeviceName   string
+	IPAddress    string
+	UserAgent    string
+	ExpiresAt    time.Time
+	RevokedAt    *time.Time
+	CreatedAt    time.Time
 }
 
 type OTP struct {

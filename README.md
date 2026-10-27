@@ -150,3 +150,9 @@ This is an additive JSON event change with no schema migration. Existing ownerle
 events remain intact and inaccessible. They need a separately reviewed ownership
 backfill based on verified records; do not assign them to the first caller.
 Existing success payloads are preserved in this security step.
+
+## Profile API
+
+Authenticated profile GET/PATCH and verified email changes are implemented.
+See [profile-api.md](docs/profile-api.md) for payloads, code verification, session
+revocation, shared rate limits, migrations, tests and remaining profile features.

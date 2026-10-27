@@ -6,6 +6,430 @@
     "description": "Minimal OpenAPI spec for TrackFund"
   },
   "paths": {
+    "/api/profile/me": {
+      "get": {
+        "summary": "Get the signed-in user?s profile",
+        "tags": [
+          "Profile"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Returns only the signed-in user. Cache-Control: no-store. No password hashes or verification codes are returned.",
+        "responses": {
+          "200": {
+            "description": "Current authenticated profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Profile"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "id": "user_123",
+                    "fullName": "Sample User",
+                    "email": "user@example.com",
+                    "phoneNumber": "+2348012345678",
+                    "photoUrl": null,
+                    "pendingEmail": null,
+                    "emailChangeId": null,
+                    "emailChangeExpiresAt": null,
+                    "createdAt": "2026-10-27T09:00:00Z",
+                    "updatedAt": "2026-10-27T09:30:00Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, revoked or expired access token",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Missing, invalid, revoked or expired access token",
+                  "code": "unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Profile was not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Profile was not found",
+                  "code": "profile_not_found"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Profile service unavailable",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Profile service unavailable",
+                  "code": "profile_unavailable"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update the signed-in user?s profile",
+        "tags": [
+          "Profile"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Partial update. Email changes send a verification code to the new address; email remains unchanged and pendingEmail/emailChangeId are returned. Repeat the email PATCH to resend (five requests/hour). Send the current email to cancel a pending change. Fields such as id, userId, role and status are rejected. Null clears phoneNumber/photoUrl. 20 validated updates/minute/user. Photo URL assignment does not upload an avatar.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "fullName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "phoneNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "International number with country code; common separators are removed."
+                  },
+                  "photoUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "nullable": true,
+                    "description": "HTTPS image URL without credentials or fragment, or null."
+                  }
+                }
+              },
+              "example": {
+                "fullName": "Sample User",
+                "phoneNumber": "+2348012345678"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current authenticated profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Profile"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "id": "user_123",
+                    "fullName": "Sample User",
+                    "email": "user@example.com",
+                    "phoneNumber": "+2348012345678",
+                    "photoUrl": null,
+                    "pendingEmail": null,
+                    "emailChangeId": null,
+                    "emailChangeExpiresAt": null,
+                    "createdAt": "2026-10-27T09:00:00Z",
+                    "updatedAt": "2026-10-27T09:30:00Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Malformed JSON",
+                  "code": "invalid_json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Missing or invalid session",
+                  "code": "unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Profile was not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Profile was not found",
+                  "code": "profile_not_found"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already belongs to another user",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Email already belongs to another user",
+                  "code": "email_conflict"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds 8 KiB",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Request exceeds 8 KiB",
+                  "code": "request_too_large"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Field validation failed",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Field validation failed",
+                  "code": "validation_failed",
+                  "errors": {
+                    "email": "Enter a valid email address"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many profile or email requests; see Retry-After",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Too many profile or email requests; see Retry-After",
+                  "code": "profile_rate_limited"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or email delivery unavailable; other valid profile fields may already have been saved",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Storage or email delivery unavailable; other valid profile fields may already have been saved",
+                  "code": "verification_delivery_failed"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/me/email/verify": {
+      "post": {
+        "summary": "Verify a pending profile email change",
+        "tags": [
+          "Profile"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Code expires after ten minutes and permits five wrong attempts. A successful change revokes existing access and refresh tokens; sign in again with the new email. Twenty verification requests/minute/user. Codes are never returned or logged by the production profile API.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "challengeId",
+                  "code"
+                ],
+                "properties": {
+                  "challengeId": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{32}$"
+                  },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[0-9]{6}$"
+                  }
+                }
+              },
+              "example": {
+                "challengeId": "0123456789abcdef0123456789abcdef",
+                "code": "123456"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Email changed; fresh login required",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "id": "user_123",
+                    "fullName": "Sample User",
+                    "email": "new@example.com",
+                    "phoneNumber": "+2348012345678",
+                    "photoUrl": null,
+                    "pendingEmail": null,
+                    "emailChangeId": null,
+                    "emailChangeExpiresAt": null,
+                    "createdAt": "2026-10-27T09:00:00Z",
+                    "updatedAt": "2026-10-27T09:30:00Z"
+                  },
+                  "signInRequired": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Malformed JSON",
+                  "code": "invalid_json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Missing or invalid session",
+                  "code": "unauthorized"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email became unavailable before verification",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Email became unavailable before verification",
+                  "code": "email_conflict"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds 8 KiB",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Request exceeds 8 KiB",
+                  "code": "request_too_large"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid, expired, replaced or non-owned challenge/code",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Invalid, expired, replaced or non-owned challenge/code",
+                  "code": "invalid_email_code",
+                  "errors": {
+                    "email": "Enter a valid email address"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Attempt or request limit exceeded; request a new code or wait",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Attempt or request limit exceeded; request a new code or wait",
+                  "code": "email_attempts_exhausted"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Profile service unavailable",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Profile service unavailable",
+                  "code": "profile_unavailable"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/mono/link-session/{reference}": {
       "get": {
         "summary": "Get the authenticated user?s Mono connection session",
@@ -835,6 +1259,66 @@
       }
     },
     "schemas": {
+      "Profile": {
+        "type": "object",
+        "required": [
+          "id",
+          "fullName",
+          "email",
+          "phoneNumber",
+          "photoUrl",
+          "pendingEmail",
+          "emailChangeId",
+          "emailChangeExpiresAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phoneNumber": {
+            "type": "string",
+            "description": "Normalized international number; empty if unset."
+          },
+          "photoUrl": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "pendingEmail": {
+            "type": "string",
+            "format": "email",
+            "nullable": true,
+            "description": "Not used for sign-in until verified."
+          },
+          "emailChangeId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Pass as challengeId when verifying the email change."
+          },
+          "emailChangeExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "MonoAccount": {
         "type": "object",
         "properties": {

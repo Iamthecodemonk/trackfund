@@ -277,7 +277,7 @@ func (s Service) Refresh(ctx context.Context, refreshToken, deviceName, ipAddres
 	if err != nil {
 		return AuthResult{}, err
 	}
-	if !ok || user.Status != auth.StatusActive || !user.IsEmailVerified {
+	if !ok || user.Status != auth.StatusActive || !user.IsEmailVerified || (stored.TokenVersion != nil && *stored.TokenVersion != user.TokenVersion) {
 		return AuthResult{}, ErrSessionExpired
 	}
 	if err := s.repo.RevokeRefreshToken(ctx, stored.ID, s.now()); err != nil {
@@ -376,14 +376,15 @@ func (s Service) createSession(ctx context.Context, user auth.User, deviceName, 
 	}
 	now := s.now()
 	if err := s.repo.SaveRefreshToken(ctx, auth.RefreshToken{
-		ID:         tokenID,
-		UserID:     user.ID,
-		TokenHash:  keyedHash(s.secret, refreshToken),
-		DeviceName: strings.TrimSpace(deviceName),
-		IPAddress:  ipAddress,
-		UserAgent:  userAgent,
-		ExpiresAt:  now.Add(s.refreshTokenTTL),
-		CreatedAt:  now,
+		TokenVersion: &user.TokenVersion,
+		ID:           tokenID,
+		UserID:       user.ID,
+		TokenHash:    keyedHash(s.secret, refreshToken),
+		DeviceName:   strings.TrimSpace(deviceName),
+		IPAddress:    ipAddress,
+		UserAgent:    userAgent,
+		ExpiresAt:    now.Add(s.refreshTokenTTL),
+		CreatedAt:    now,
 	}); err != nil {
 		return AuthResult{}, err
 	}

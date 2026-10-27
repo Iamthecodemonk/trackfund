@@ -9,6 +9,7 @@ import (
 	authapp "trackfund/internal/application/auth"
 	fundsapp "trackfund/internal/application/funds"
 	"trackfund/internal/application/ports"
+	profileapp "trackfund/internal/application/profile"
 	"trackfund/internal/config"
 	"trackfund/internal/infrastructure/eventstore"
 	"trackfund/internal/infrastructure/logger"
@@ -33,6 +34,7 @@ type App struct {
 	Commands     Commands
 	Queries      Queries
 	Auth         authapp.Service
+	Profile      *profileapp.Service
 	Logger       *logger.Logger
 	Closer       func()
 	MonoRepo     *postgres.MonoRepository
@@ -95,6 +97,7 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 	app.Logger = lg
 	app.Config = cfg
 	app.MonoWebhooks = monoRepo
+	app.Profile = profileapp.NewService(postgres.NewProfileRepository(db), emailSender, cfg.JWTSecret)
 	// replace auth service with configured email sender
 	app.Auth = authapp.NewService(authRepo, emailSender, authapp.Config{
 		JWTSecret:         cfg.JWTSecret,

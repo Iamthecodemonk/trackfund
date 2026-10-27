@@ -110,6 +110,10 @@ func (s *Server) routes() {
 		r.Get("/funds/{id}", s.getFund)
 		r.Post("/funds/{id}/contributions", s.recordContribution)
 	})
+	profileRoutes := s.router.With(s.requireProfileAuth)
+	profileRoutes.Get("/api/profile/me", s.getProfile)
+	profileRoutes.Patch("/api/profile/me", s.patchProfile)
+	profileRoutes.Post("/api/profile/me/email/verify", s.verifyProfileEmail)
 	// serve OpenAPI and a simple docs page
 	s.router.Get("/openapi.json", s.serveOpenAPI)
 	s.router.Get("/docs", s.serveDocs)

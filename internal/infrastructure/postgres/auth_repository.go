@@ -144,18 +144,18 @@ func (r *AuthRepository) IncrementOTPAttempts(ctx context.Context, id string) er
 
 func (r *AuthRepository) SaveRefreshToken(ctx context.Context, token auth.RefreshToken) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO refresh_tokens (id, user_id, token_hash, device_name, ip_address, user_agent, expires_at, revoked_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		token.ID, token.UserID, token.TokenHash, token.DeviceName, token.IPAddress, token.UserAgent, token.ExpiresAt, token.RevokedAt, token.CreatedAt)
+		INSERT INTO refresh_tokens (id, user_id, token_hash, device_name, ip_address, user_agent, expires_at, revoked_at, created_at,token_version)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,$10)`,
+		token.ID, token.UserID, token.TokenHash, token.DeviceName, token.IPAddress, token.UserAgent, token.ExpiresAt, token.RevokedAt, token.CreatedAt, token.TokenVersion)
 	return err
 }
 
 func (r *AuthRepository) FindRefreshToken(ctx context.Context, tokenHash string) (auth.RefreshToken, bool, error) {
 	var token auth.RefreshToken
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, user_id, token_hash, device_name, ip_address, user_agent, expires_at, revoked_at, created_at
+		SELECT id, user_id, token_hash, device_name, ip_address, user_agent, expires_at, revoked_at, created_at,token_version
 		FROM refresh_tokens
-		WHERE token_hash = $1`, tokenHash).Scan(&token.ID, &token.UserID, &token.TokenHash, &token.DeviceName, &token.IPAddress, &token.UserAgent, &token.ExpiresAt, &token.RevokedAt, &token.CreatedAt)
+		WHERE token_hash = $1`, tokenHash).Scan(&token.ID, &token.UserID, &token.TokenHash, &token.DeviceName, &token.IPAddress, &token.UserAgent, &token.ExpiresAt, &token.RevokedAt, &token.CreatedAt, &token.TokenVersion)
 	if err == pgx.ErrNoRows {
 		return auth.RefreshToken{}, false, nil
 	}
