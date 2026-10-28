@@ -49,7 +49,9 @@ func TestMonoSessionUsesAuthenticatedCustomerAndPersistsReference(t *testing.T) 
 	}
 	store := &fakeMonoSessions{}
 	app.MonoSessions = store
-	app.Config.MonoCallbackURL = "trackfund://mono/callback"
+	app.Config.MonoCallbackURL = ""
+	app.Config.MonoMobileRedirectURL = "trackiq://mono/callback"
+	app.Config.MonoWebRedirectURL = "https://app.example.com/mono/callback"
 	app.Config.MonoAllowedRedirectURLs = []string{"https://app.example.com/mono/callback"}
 	app.MonoClient = mono.NewClient("https://api.withmono.com/v2/", "provider-secret", "")
 	calls := 0
@@ -106,6 +108,7 @@ func TestMonoSessionUsesAuthenticatedCustomerAndPersistsReference(t *testing.T) 
 		Success bool
 		Data    struct {
 			MonoURL           string `json:"mono_url"`
+			RedirectURL       string `json:"redirect_url"`
 			Reference, Status string
 		}
 	}
@@ -118,11 +121,18 @@ func TestMonoSessionUsesAuthenticatedCustomerAndPersistsReference(t *testing.T) 
 	if rr.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("link credential may be cached")
 	}
-	rr = request("", token)
-	if rr.Code != 200 || store.records[1].redirect != "trackfund://mono/callback" || store.records[0].ref == store.records[1].ref {
-		t.Fatal("fallback or unique reference failed")
+	rr = request(`{"redirect_url":"trackiq://mono/callback","scope":"auth"}`, token)
+	if rr.Code != 200 || store.records[1].redirect != "trackiq://mono/callback" || store.records[0].ref == store.records[1].ref {
+		t.Fatal("mobile callback or unique reference failed")
 	}
-	for _, bad := range []string{`{"redirect_url":"https://evil.example/callback"}`, `{"redirect_url":"javascript:alert(1)"}`, `{"redirect_url":"trackfund://mono/callback","callbackUrl":"https://app.example.com/mono/callback"}`} {
+	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil || result.Data.RedirectURL != "trackiq://mono/callback" {
+		t.Fatal("mobile callback was rewritten in response")
+	}
+	rr = request("", token)
+	if rr.Code != 200 || store.records[2].redirect != "https://app.example.com/mono/callback" {
+		t.Fatal("web fallback failed")
+	}
+	for _, bad := range []string{`{"redirect_url":"trackfund://mono/callback"}`, `{"redirect_url":"https://evil.example/callback"}`, `{"redirect_url":"javascript:alert(1)"}`, `{"redirect_url":"trackiq://mono/callback","callbackUrl":"https://app.example.com/mono/callback"}`} {
 		before := calls
 		rr := request(bad, token)
 		if rr.Code != 422 || calls != before {

@@ -79,9 +79,12 @@ func (s *Server) createMonoLinkSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if redirect == "" {
 		redirect = s.app.Config.MonoCallbackURL
+		if redirect == "" {
+			redirect = s.app.Config.MonoWebRedirectURL
+		}
 	}
 	if redirect == "" {
-		fail(http.StatusUnprocessableEntity, "missing_callback_url", "Configure MONO_CALLBACK_URL or send an allowed redirect_url")
+		fail(http.StatusUnprocessableEntity, "missing_callback_url", "Configure MONO_CALLBACK_URL/MONO_WEB_REDIRECT_URL or send an allowed redirect_url")
 		return
 	}
 	if !s.app.Config.AllowsMonoRedirect(redirect) {

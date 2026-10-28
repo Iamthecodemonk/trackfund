@@ -32,6 +32,8 @@ type Config struct {
 	MonoSecretKey           string
 	MonoBaseURL             string
 	MonoCallbackURL         string
+	MonoMobileRedirectURL   string
+	MonoWebRedirectURL      string
 	MonoAllowedRedirectURLs []string
 	MonoTimeoutSecs         int
 	MonoWebhookSecret       string
@@ -62,6 +64,8 @@ func Load() Config {
 		MonoSecretKey:           os.Getenv("MONO_SECRET_KEY"),
 		MonoBaseURL:             strings.TrimRight(getenv("MONO_BASE_URL", "https://api.withmono.com/v2"), "/"),
 		MonoCallbackURL:         strings.TrimSpace(os.Getenv("MONO_CALLBACK_URL")),
+		MonoMobileRedirectURL:   strings.TrimSpace(os.Getenv("MONO_MOBILE_REDIRECT_URL")),
+		MonoWebRedirectURL:      strings.TrimSpace(os.Getenv("MONO_WEB_REDIRECT_URL")),
 		MonoAllowedRedirectURLs: splitURLs(os.Getenv("MONO_ALLOWED_REDIRECT_URLS")),
 		MonoTimeoutSecs:         getenvInt("MONO_TIMEOUT_SECONDS", 30),
 		MonoWebhookSecret:       getenv("MONO_WEBHOOK_SECRET", ""),
@@ -178,7 +182,7 @@ func ValidMonoRedirect(raw string) bool {
 	if err != nil || u.User != nil || u.Fragment != "" || u.RawQuery != "" || u.Opaque != "" {
 		return false
 	}
-	if raw == "trackfund://mono/callback" {
+	if raw == "trackiq://mono/callback" {
 		return true
 	}
 	return u.Scheme == "https" && u.Hostname() != "" && u.Hostname() != "localhost" && !strings.ContainsAny(raw, "\r\n")
@@ -188,7 +192,7 @@ func (c Config) AllowsMonoRedirect(raw string) bool {
 	if !ValidMonoRedirect(raw) {
 		return false
 	}
-	if raw == c.MonoCallbackURL {
+	if raw == c.MonoCallbackURL || raw == c.MonoMobileRedirectURL || raw == c.MonoWebRedirectURL {
 		return true
 	}
 	for _, allowed := range c.MonoAllowedRedirectURLs {
@@ -200,9 +204,15 @@ func (c Config) AllowsMonoRedirect(raw string) bool {
 }
 
 func (c Config) validateMono() error {
-	for _, callback := range append(append([]string{}, c.MonoAllowedRedirectURLs...), c.MonoCallbackURL) {
+	if c.MonoMobileRedirectURL != "" && c.MonoMobileRedirectURL != "trackiq://mono/callback" {
+		return fmt.Errorf("MONO_MOBILE_REDIRECT_URL must be trackiq://mono/callback")
+	}
+	if c.MonoWebRedirectURL != "" && (!ValidMonoRedirect(c.MonoWebRedirectURL) || !strings.HasPrefix(c.MonoWebRedirectURL, "https://")) {
+		return fmt.Errorf("MONO_WEB_REDIRECT_URL must be an HTTPS frontend callback without query/fragment")
+	}
+	for _, callback := range append(append([]string{}, c.MonoAllowedRedirectURLs...), c.MonoCallbackURL, c.MonoMobileRedirectURL, c.MonoWebRedirectURL) {
 		if callback != "" && !ValidMonoRedirect(callback) {
-			return fmt.Errorf("Mono callbacks must be HTTPS URLs without query/fragment or trackfund://mono/callback")
+			return fmt.Errorf("Mono callbacks must be HTTPS URLs without query/fragment or trackiq://mono/callback")
 		}
 	}
 	if c.MonoSecretKey == "" {
@@ -224,8 +234,8 @@ func (c Config) validateMono() error {
 	if strings.TrimSpace(c.MonoWebhookSecret) == "" {
 		return fmt.Errorf("MONO_WEBHOOK_SECRET is required when Mono is configured")
 	}
-	if c.MonoCallbackURL == "" && len(c.MonoAllowedRedirectURLs) == 0 {
-		return fmt.Errorf("Set MONO_CALLBACK_URL or MONO_ALLOWED_REDIRECT_URLS when Mono is configured")
+	if c.MonoCallbackURL == "" && c.MonoMobileRedirectURL == "" && c.MonoWebRedirectURL == "" && len(c.MonoAllowedRedirectURLs) == 0 {
+		return fmt.Errorf("Set MONO_CALLBACK_URL, MONO_MOBILE_REDIRECT_URL, MONO_WEB_REDIRECT_URL or MONO_ALLOWED_REDIRECT_URLS when Mono is configured")
 	}
 	return nil
 }

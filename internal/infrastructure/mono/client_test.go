@@ -37,7 +37,7 @@ func TestInitiateResponseUnmarshalTopLevelData(t *testing.T) {
 
 func TestInitiateResponseUnmarshalMonoURLData(t *testing.T) {
 	var resp InitiateResponse
-	err := json.Unmarshal([]byte(`{"status":"successful","data":{"mono_url":"https://link.mono.co/ALB65XCPXCOU","scope":"auth","institution":{},"redirect_url":"trackfund://mono/callback","is_multi":false,"created_at":"2026-07-03T14:16:56.839Z"}}`), &resp)
+	err := json.Unmarshal([]byte(`{"status":"successful","data":{"mono_url":"https://link.mono.co/ALB65XCPXCOU","scope":"auth","institution":{},"redirect_url":"trackiq://mono/callback","is_multi":false,"created_at":"2026-07-03T14:16:56.839Z"}}`), &resp)
 	if err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
@@ -48,8 +48,8 @@ func TestInitiateResponseUnmarshalMonoURLData(t *testing.T) {
 	if resp.Data.Scope != "auth" {
 		t.Fatalf("scope = %q, want auth", resp.Data.Scope)
 	}
-	if resp.Data.RedirectURL != "trackfund://mono/callback" {
-		t.Fatalf("redirect url = %q, want trackfund://mono/callback", resp.Data.RedirectURL)
+	if resp.Data.RedirectURL != "trackiq://mono/callback" {
+		t.Fatalf("redirect url = %q, want trackiq://mono/callback", resp.Data.RedirectURL)
 	}
 }
 

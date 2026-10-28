@@ -758,7 +758,7 @@
             "bearerAuth": []
           }
         ],
-        "description": "Create a pending hosted-link session. Customer and meta.ref come from the server. Redirect aliases must agree and match the configured allowlist. Hosted completion uses webhooks, not a guaranteed redirect code.",
+        "description": "Create a pending hosted-link session. Customer and meta.ref come from the server. Redirect aliases must agree and match the configured allowlist. Hosted completion uses webhooks, not a guaranteed redirect code. Mobile clients must explicitly send trackiq://mono/callback configured as MONO_MOBILE_REDIRECT_URL. MONO_WEB_REDIRECT_URL separately configures a served HTTPS frontend callback. Redirects must exactly match configuration and are never rewritten. The old TrackFund mobile scheme is rejected.",
         "requestBody": {
           "required": false,
           "content": {
@@ -791,7 +791,7 @@
                 }
               },
               "example": {
-                "redirect_url": "trackfund://mono/callback"
+                "redirect_url": "trackiq://mono/callback"
               }
             }
           }
@@ -848,7 +848,7 @@
                     "client_token": "https://link.mono.co/ALB65XCPXCOU",
                     "mono_url": "https://link.mono.co/ALB65XCPXCOU",
                     "scope": "auth",
-                    "redirect_url": "trackfund://mono/callback",
+                    "redirect_url": "trackiq://mono/callback",
                     "reference": "server-generated-reference",
                     "status": "pending"
                   }

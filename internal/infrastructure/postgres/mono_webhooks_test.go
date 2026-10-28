@@ -91,7 +91,7 @@ func countTest(t *testing.T, r *MonoRepository, table string) int {
 func TestWebhookConnectionOrderIdempotencyAndReadiness(t *testing.T) {
 	r := webhookTestRepo(t)
 	ctx := context.Background()
-	if err := r.CreateLinkSession(ctx, "session-a", "alice", "trackfund://mono/callback"); err != nil {
+	if err := r.CreateLinkSession(ctx, "session-a", "alice", "trackiq://mono/callback"); err != nil {
 		t.Fatal(err)
 	}
 	update := `{"account":{"_id":"bank-a","name":"Alice","accountNumber":"12345","currency":"NGN","balance":9007199254740993,"institution":{"bankCode":"001"}},"meta":{"ref":"session-a","data_status":"AVAILABLE","retrieved_data":["transactions","balance"]}}`
@@ -170,7 +170,7 @@ func TestWebhookOwnershipCannotChange(t *testing.T) {
 	r := webhookTestRepo(t)
 	ctx := context.Background()
 	for _, owner := range []string{"alice", "bob"} {
-		if err := r.CreateLinkSession(ctx, owner, owner, "trackfund://mono/callback"); err != nil {
+		if err := r.CreateLinkSession(ctx, owner, owner, "trackiq://mono/callback"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -237,7 +237,7 @@ func TestWebhookRetriesRollbackTransactionsAndUseExactAmounts(t *testing.T) {
 	// Missing references survive a processing failure and become processable later.
 	ingestTest(t, r, "before-session", "mono.events.account_connected", 3, `{"id":"bank-c","meta":{"ref":"later"}}`)
 	processTest(t, r)
-	if err := r.CreateLinkSession(ctx, "later", "bob", "trackfund://mono/callback"); err != nil {
+	if err := r.CreateLinkSession(ctx, "later", "bob", "trackiq://mono/callback"); err != nil {
 		t.Fatal(err)
 	}
 	r.pool.Exec(ctx, "UPDATE mono_webhook_events SET next_attempt_at=NOW() WHERE event_id='before-session'")
@@ -310,7 +310,7 @@ func TestWebhookRetryExhaustionAndSingleAccountSession(t *testing.T) {
 	if state != "failed" || attempts != 20 {
 		t.Fatal("retry limit was not enforced")
 	}
-	if err := r.CreateLinkSession(ctx, "ref", "alice", "trackfund://mono/callback"); err != nil {
+	if err := r.CreateLinkSession(ctx, "ref", "alice", "trackiq://mono/callback"); err != nil {
 		t.Fatal(err)
 	}
 	ingestTest(t, r, "first", "mono.events.account_connected", 2, `{"id":"bank-a","meta":{"ref":"ref"}}`)

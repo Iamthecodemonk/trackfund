@@ -5,11 +5,12 @@ signed-in user's name/email, fixes scope to auth, generates meta.ref, and persis
 the reference/user mapping before POSTing to Mono /v2/accounts/initiate.
 Client-supplied customer, user_id, scope, and meta fields cannot override these values.
 
-Send {"redirect_url":"trackfund://mono/callback"}, or omit the body to use
+Send {"redirect_url":"trackiq://mono/callback"}, or omit the body to use
 MONO_CALLBACK_URL. redirectUrl, callback_url, and callbackUrl are aliases; conflicting
-values return 422. Callbacks must match MONO_CALLBACK_URL or an exact entry in the
+values return 422. Callbacks must match MONO_CALLBACK_URL, MONO_MOBILE_REDIRECT_URL,
+MONO_WEB_REDIRECT_URL or an exact entry in the
 comma-separated MONO_ALLOWED_REDIRECT_URLS. HTTPS web callbacks and the registered
-trackfund://mono/callback deep link are supported. Queries/fragments are not allowed.
+trackiq://mono/callback deep link are supported. Queries/fragments are not allowed.
 
 The success envelope data contains mono_url, the compatibility client_token,
 reference, status: pending, scope: auth, and redirect_url. Opening the link starts
@@ -26,17 +27,25 @@ The hosted domain is https://thetrackiq.co. Use these deployment values:
 
 ```dotenv
 MONO_CALLBACK_URL=https://thetrackiq.co/mono/callback
-MONO_ALLOWED_REDIRECT_URLS=https://thetrackiq.co/mono/callback,trackfund://mono/callback
+MONO_MOBILE_REDIRECT_URL=trackiq://mono/callback
+MONO_WEB_REDIRECT_URL=https://thetrackiq.co/mono/callback
+MONO_ALLOWED_REDIRECT_URLS=https://thetrackiq.co/mono/callback,trackiq://mono/callback
 ```
 
 Register https://thetrackiq.co/api/mono/webhook in the Mono dashboard, with the
 same webhook secret configured on the server. The web frontend must serve the
-/mono/callback route. Mobile must explicitly send trackfund://mono/callback
+/mono/callback route. Mobile must explicitly send trackiq://mono/callback
 when starting a session so the app receives its registered deep link.
 
 Set MONO_SECRET_KEY and MONO_WEBHOOK_SECRET in the host secret store.
 MONO_BASE_URL defaults to https://api.withmono.com/v2. Set MONO_CALLBACK_URL and/or
 MONO_ALLOWED_REDIRECT_URLS for your app. The public key is optional for hosted links.
+The old trackfund mobile scheme is rejected, even if it remains in the allow-list;
+remove old entries before deploying. Register trackiq://mono/callback in Mono.
+MONO_WEB_REDIRECT_URL must point to a served frontend route; an API/docs URL does
+not implement that page. If redirect_url is omitted, MONO_CALLBACK_URL takes
+precedence over MONO_WEB_REDIRECT_URL; the mobile setting requires an explicit
+redirect_url so web callers are never silently redirected into the app.
 Use credentials for the intended Mono app/environment. Restart/redeploy the API.
 The Go binary does not load .env; Compose passes the configured values explicitly.
 
