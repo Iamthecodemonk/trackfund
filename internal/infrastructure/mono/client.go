@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	monoapp "trackfund/internal/application/mono"
 )
 
 var (
@@ -28,7 +29,7 @@ type RequestError struct {
 }
 
 func (e *RequestError) Error() string {
-	return fmt.Sprintf("mono request failed: status=%d body=%s", e.StatusCode, e.Body)
+	return fmt.Sprintf("mono request failed: status=%d", e.StatusCode)
 }
 
 type ResponseParseError struct {
@@ -227,6 +228,7 @@ type MonoAccount struct {
 	BankCode      string `json:"bank_code"`
 	Currency      string `json:"currency"`
 	Provider      string `json:"provider"`
+	BankName      string `json:"bank_name"`
 }
 
 type TransactionsResponse struct {
@@ -237,6 +239,7 @@ type TransactionsResponse struct {
 }
 
 type MonoTransaction struct {
+	Type        string `json:"type,omitempty"`
 	ID          string `json:"id"`
 	AccountID   string `json:"account_id"`
 	Amount      int64  `json:"amount"`
@@ -357,5 +360,64 @@ func (t *MonoTransaction) UnmarshalJSON(body []byte) error {
 	if t.Description == "" {
 		t.Description = wrapper.Narration
 	}
+	var signErr error
+	t.Amount, signErr = monoapp.SignedAmount(t.Amount, t.Type)
+	return signErr
+}
+
+// UnlinkAccount uses Mono's v2 unlink endpoint. A missing authorization is already detached.
+func (c *Client) UnlinkAccount(ctx context.Context, id string) error {
+	err := c.doRequest(ctx, http.MethodPost, "/accounts/"+url.PathEscape(id)+"/unlink", nil, nil)
+	var re *RequestError
+	if errors.As(err, &re) && re.StatusCode == 404 {
+		return nil
+	}
+	return err
+}
+
+func (a *MonoAccount) UnmarshalJSON(body []byte) error {
+	type plain MonoAccount
+	var w struct {
+		plain
+		MongoID     string `json:"_id"`
+		CamelNumber string `json:"accountNumber"`
+		Institution struct {
+			Name     string `json:"name"`
+			BankCode string `json:"bankCode"`
+		} `json:"institution"`
+	}
+	if err := json.Unmarshal(body, &w); err != nil {
+		return err
+	}
+	*a = MonoAccount(w.plain)
+	if a.ID == "" {
+		a.ID = w.MongoID
+	}
+	if a.AccountNumber == "" {
+		a.AccountNumber = w.CamelNumber
+	}
+	if a.BankCode == "" {
+		a.BankCode = w.Institution.BankCode
+	}
+	if a.BankName == "" {
+		a.BankName = w.Institution.Name
+	}
+	if a.Provider == "" {
+		a.Provider = "mono"
+	}
 	return nil
+}
+func (c *Client) AccountDetails(ctx context.Context, id string) (MonoAccount, error) {
+	var r struct {
+		Data struct {
+			Account MonoAccount `json:"account"`
+		} `json:"data"`
+	}
+	if err := c.doRequest(ctx, http.MethodGet, "/accounts/"+url.PathEscape(id), nil, &r); err != nil {
+		return MonoAccount{}, err
+	}
+	if r.Data.Account.ID != id {
+		return MonoAccount{}, fmt.Errorf("Mono account details mismatch")
+	}
+	return r.Data.Account, nil
 }

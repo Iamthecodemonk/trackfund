@@ -100,7 +100,7 @@
             "bearerAuth": []
           }
         ],
-        "description": "Partial update. Email changes send a verification code to the new address; email remains unchanged and pendingEmail/emailChangeId are returned. Repeat the email PATCH to resend (five requests/hour). Send the current email to cancel a pending change. Fields such as id, userId, role and status are rejected. Null clears phoneNumber/photoUrl. 20 validated updates/minute/user. Photo URL assignment does not upload an avatar.",
+        "description": "Partial update. Email changes send a verification code to the new address; email remains unchanged and pendingEmail/emailChangeId are returned. Repeat the email PATCH to resend (five requests/hour). Send the current email to cancel a pending change. Fields such as id, userId, role and status are rejected. Null clears phoneNumber/photoUrl. 20 validated updates/minute/user. Photo URL assignment does not upload an avatar. Local phone numbers beginning with 0 (10-11 digits) are supported and preserved without guessing a country. Avatar uploads use POST /api/profile/me/avatar.",
         "requestBody": {
           "required": true,
           "content": {
@@ -458,7 +458,7 @@
                   "success": true,
                   "data": {
                     "reference": "saved-reference",
-                    "status": "connected",
+                    "status": "syncing",
                     "accountId": "internal-account-id",
                     "dataStatus": "AVAILABLE",
                     "availableData": [
@@ -481,7 +481,8 @@
           "503": {
             "description": "Session storage temporarily unavailable"
           }
-        }
+        },
+        "description": "Owner-only polling. Initial progression: pending -> connected (account committed) -> syncing (provider transactions available, import pending) -> available (initial import complete). A later refresh preserves available with syncStatus=syncing. failed is terminal for a failed initiation or removed link; provider FAILED is also reported as failed. syncStatus is syncing, ready, failed or unavailable. transactionsReady describes whether the latest ready provider snapshot has been imported."
       }
     },
     "/api/auth/register": {
@@ -494,12 +495,24 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "fullName": { "type": "string" },
-                  "email": { "type": "string" },
-                  "phone": { "type": "string" },
-                  "password": { "type": "string" }
+                  "fullName": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
                 },
-                "required": ["fullName", "email", "password"]
+                "required": [
+                  "fullName",
+                  "email",
+                  "password"
+                ]
               },
               "example": {
                 "fullName": "Jane Developer",
@@ -539,11 +552,20 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "email": { "type": "string" },
-                  "password": { "type": "string" },
-                  "deviceName": { "type": "string" }
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "deviceName": {
+                    "type": "string"
+                  }
                 },
-                "required": ["email", "password"]
+                "required": [
+                  "email",
+                  "password"
+                ]
               },
               "example": {
                 "email": "jane@example.com",
@@ -588,9 +610,16 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "email": { "type": "string" },
-                  "otp": { "type": "string" },
-                  "required": ["email", "otp"]
+                  "email": {
+                    "type": "string"
+                  },
+                  "otp": {
+                    "type": "string"
+                  },
+                  "required": [
+                    "email",
+                    "otp"
+                  ]
                 }
               },
               "example": {
@@ -625,7 +654,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "email": { "type": "string" }
+                  "email": {
+                    "type": "string"
+                  }
                 }
               },
               "example": {
@@ -659,7 +690,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "email": { "type": "string" }
+                  "email": {
+                    "type": "string"
+                  }
                 }
               },
               "example": {
@@ -685,10 +718,20 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "email": { "type": "string" },
-                  "otp": { "type": "string" },
-                  "newPassword": { "type": "string" },
-                  "required": ["email", "otp", "newPassword"]
+                  "email": {
+                    "type": "string"
+                  },
+                  "otp": {
+                    "type": "string"
+                  },
+                  "newPassword": {
+                    "type": "string"
+                  },
+                  "required": [
+                    "email",
+                    "otp",
+                    "newPassword"
+                  ]
                 }
               },
               "example": {
@@ -716,7 +759,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "idToken": { "type": "string" }
+                  "idToken": {
+                    "type": "string"
+                  }
                 }
               },
               "example": {
@@ -877,66 +922,169 @@
     "/api/mono/complete-link": {
       "post": {
         "summary": "Exchange Mono short-lived code on server and persist accounts",
-        "security": [{ "bearerAuth": [] }],
-        "description": "Frontend posts the `code` received from Mono Connect to this endpoint. Server exchanges it with Mono using the secret key and upserts returned accounts.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Exchange a short-lived authorization code server-side and commit the owned account before returning. Idempotent account persistence. Provider credentials and raw provider responses are never returned.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "type": "object", "properties": { "code": { "type": "string" } }, "required": ["code"] },
-              "example": { "code": "mono_code_abc123" }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              },
+              "example": {
+                "code": "mono_code_abc123"
+              }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "accounts upserted",
+            "description": "Account link committed",
             "content": {
               "application/json": {
-                "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "data": { "type": "object" } } },
-                "example": { "success": true, "data": { "accounts": [ { "id": "internal_id_1", "monoAccountId": "mono_acc_1", "accountName": "Primary" } ] } }
+                "example": {
+                  "success": true,
+                  "data": {
+                    "linked": true
+                  }
+                }
               }
             }
           },
-          "400": { "description": "Bad request / invalid code" },
-          "401": { "description": "Unauthorized" }
+          "400": {
+            "description": "Bad request / invalid code"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       }
     },
     "/api/mono/accounts": {
       "post": {
         "summary": "Exchange Mono short-lived code on server and persist account",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "description": "Flutter may call this after Mono redirects back with a code. Server exchanges it with Mono and stores the linked account.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "type": "object", "properties": { "code": { "type": "string" } }, "required": ["code"] },
-              "example": { "code": "mono_code_abc123" }
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              },
+              "example": {
+                "code": "mono_code_abc123"
+              }
             }
           }
         },
         "responses": {
-          "200": { "description": "account upserted" },
-          "400": { "description": "Bad request / missing code" },
-          "401": { "description": "Unauthorized" }
+          "200": {
+            "description": "Account link committed",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "linked": true
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request / missing code"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       },
       "get": {
         "summary": "List Mono accounts for the authenticated user",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
-            "description": "ok",
+            "description": "Owned links; a new user receives an empty array",
             "content": {
               "application/json": {
-                "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "data": { "type": "array", "items": { "$ref": "#/components/schemas/MonoAccount" } } } },
-                "example": { "success": true, "data": [ { "id": "internal_id_1", "monoAccountId": "mono_acc_1", "accountName": "Primary", "accountNumber": "0123456789", "bankCode": "001", "currency": "NGN" } ] }
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MonoAccount"
+                      }
+                    }
+                  }
+                },
+                "examples": {
+                  "empty": {
+                    "value": {
+                      "success": true,
+                      "data": []
+                    }
+                  },
+                  "linked": {
+                    "value": {
+                      "success": true,
+                      "data": [
+                        {
+                          "id": "internal-account-id",
+                          "monoAccountId": "mono-account-id",
+                          "accountName": "Everyday account",
+                          "accountNumber": "0123456789",
+                          "bankCode": "058",
+                          "bankName": "Guaranty Trust Bank",
+                          "bankLogoUrl": null,
+                          "currency": "NGN"
+                        }
+                      ]
+                    }
+                  }
+                }
               }
             }
           },
-          "401": { "description": "Unauthorized" }
+          "401": {
+            "description": "Unauthorized"
+          }
         }
       }
     },
@@ -960,32 +1108,51 @@
         ],
         "responses": {
           "200": {
-            "description": "ok",
+            "description": "Cached transactions, including a successful empty result",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/MonoTransaction"
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MonoTransaction"
+                      }
+                    }
                   }
                 },
-                "example": {
-                  "success": true,
-                  "data": [
-                    {
-                      "transactionId": "tx_1",
-                      "amount": 5000,
-                      "currency": "NGN",
-                      "paidAt": "2026-06-20T00:00:00Z",
-                      "description": "Test payment"
+                "examples": {
+                  "empty": {
+                    "value": {
+                      "success": true,
+                      "data": []
                     }
-                  ]
+                  },
+                  "debit": {
+                    "value": {
+                      "success": true,
+                      "data": [
+                        {
+                          "id": "internal-tx-id",
+                          "transactionId": "stable-tx-id",
+                          "amount": -500000,
+                          "currency": "NGN",
+                          "paidAt": "2026-10-28T00:00:00Z",
+                          "description": "Card purchase"
+                        }
+                      ]
+                    }
+                  }
                 }
               }
             }
           },
           "202": {
-            "description": "Account data still syncing or unavailable",
+            "description": "Initial provider transaction sync is pending",
             "content": {
               "application/json": {
                 "example": {
@@ -1001,9 +1168,6 @@
           "401": {
             "description": "Unauthorized"
           },
-          "403": {
-            "description": "Account owned by another user"
-          },
           "404": {
             "description": "Account not found"
           },
@@ -1017,7 +1181,7 @@
             "description": "Account storage unavailable"
           }
         },
-        "description": "Verify account ownership and readiness before returning cached transactions. 202 means syncing/unavailable; 200 with data: [] means a successful sync returned no transactions."
+        "description": "Integer minor units: 500000 is NGN 5,000.00. Debit amounts are negative, credit amounts positive; unknown direction preserves the provider sign. Stable transaction IDs and UTC ISO-8601 paidAt timestamps. 202 is used only while an initial sync is pending. Once synced, cached transactions return 200 even while a later refresh is pending. An unavailable account without imported data returns 200 with an empty array; FAILED and DISCONNECTED remain explicit errors. Removed/foreign accounts return 404."
       }
     },
     "/api/mono/webhook": {
@@ -1247,9 +1411,140 @@
           }
         ]
       }
+    },
+    "/api/profile/me/avatar": {
+      "post": {
+        "summary": "Upload and replace the signed-in user avatar",
+        "description": "Exactly one multipart file field, maximum 5 MiB. JPEG, PNG and WebP are decoded and converted to a square 512x512 PNG with metadata removed. Maximum 12 megapixels and 8192 pixels per dimension. Ten uploads/hour/user. A unique durable HTTPS URL is committed to the same profile returned by GET /api/profile/me. Prior managed objects are deleted asynchronously after commit. Storage must be configured.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              },
+              "encoding": {
+                "file": {
+                  "contentType": "image/jpeg, image/png, image/webp"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New avatar saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "photoUrl"
+                      ],
+                      "properties": {
+                        "photoUrl": {
+                          "type": "string",
+                          "format": "uri",
+                          "example": "https://res.cloudinary.com/your-cloud-name/image/upload/v1/profile/user/avatar.png"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "photoUrl": "https://res.cloudinary.com/your-cloud-name/image/upload/v1/profile/user/avatar.png"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid image, excessive dimensions or multipart fields"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "413": {
+            "description": "File exceeds 5 MiB"
+          },
+          "415": {
+            "description": "Unsupported image type or MIME mismatch"
+          },
+          "429": {
+            "description": "Upload rate limit reached"
+          },
+          "503": {
+            "description": "Storage is not configured or upload/persistence failed"
+          }
+        }
+      }
+    },
+    "/api/mono/accounts/{id}": {
+      "delete": {
+        "summary": "Remove an owned bank-account link",
+        "description": "Atomically hides the link and schedules a durable Mono unlink job. Imported transactions are retained internally for audit but hidden from all app reads. Delayed webhooks and sync jobs cannot restore or import into a removed link. Repeat deletion by the same owner returns 204. Missing or foreign IDs return 404. Provider unlink retries in the background; a fresh Mono authorization is required to reconnect.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Link removed, or already removed by this owner; no body"
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "404": {
+            "description": "Account missing or owned by another user"
+          },
+          "503": {
+            "description": "Removal could not be committed; retry"
+          }
+        }
+      }
     }
-  }
-  ,
+  },
   "components": {
     "securitySchemes": {
       "bearerAuth": {
@@ -1322,31 +1617,86 @@
       "MonoAccount": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "monoAccountId": { "type": "string" },
-          "accountName": { "type": "string" },
-          "accountNumber": { "type": "string" },
-          "bankCode": { "type": "string" },
-          "currency": { "type": "string" }
-        }
+          "id": {
+            "type": "string"
+          },
+          "monoAccountId": {
+            "type": "string"
+          },
+          "accountName": {
+            "type": "string"
+          },
+          "accountNumber": {
+            "type": "string"
+          },
+          "bankCode": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "bankName": {
+            "type": "string",
+            "description": "Provider institution name, bank-code mapping, or Linked bank when unknown",
+            "example": "Guaranty Trust Bank"
+          },
+          "bankLogoUrl": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "Null until a verified logo source is configured. Arbitrary provider image URLs are never returned."
+          }
+        },
+        "required": [
+          "id",
+          "monoAccountId",
+          "accountName",
+          "accountNumber",
+          "bankCode",
+          "bankName",
+          "currency"
+        ]
       },
       "MonoTransaction": {
         "type": "object",
         "properties": {
-          "transactionId": { "type": "string" },
-          "amount": { "type": "integer" },
-          "currency": { "type": "string" },
-          "paidAt": { "type": "string", "format": "date-time" },
-          "description": { "type": "string" }
+          "transactionId": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Signed integer minor units; debit negative, credit positive",
+            "example": -500000
+          },
+          "currency": {
+            "type": "string"
+          },
+          "paidAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          }
         }
       },
       "MonoWebhook": {
         "type": "object",
         "properties": {
-          "event": { "type": "string" },
-          "event_id": { "type": "string" },
-          "timestamp": { "type": "string", "format": "date-time" },
-          "data": { "type": "object" }
+          "event": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data": {
+            "type": "object"
+          }
         }
       }
     }

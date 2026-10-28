@@ -94,7 +94,7 @@ Example response:
   "success": true,
   "data": {
     "reference": "saved-reference",
-    "status": "connected",
+    "status": "syncing",
     "accountId": "internal-account-id",
     "dataStatus": "AVAILABLE",
     "availableData": ["transactions", "balance"],
@@ -104,7 +104,8 @@ Example response:
 }
 ```
 
-status tracks session linking (pending/connected/failed). accountId is null before
+status tracks connection progress (pending/connected/syncing/available/failed); see
+handoff-operations.md for refresh behavior. accountId is null before
 an account is associated. dataStatus tracks the provider (PROCESSING, AVAILABLE,
 PARTIAL, UNAVAILABLE, FAILED or DISCONNECTED). syncStatus is syncing, ready, failed
 or unavailable. transactionsReady becomes true only when transactions are available
@@ -124,8 +125,9 @@ Amounts remain integer provider minor units. Transaction IDs are unique and cann
 be moved between accounts. Partial writes retry safely without duplicates.
 
 GET /api/mono/accounts returns [] for a new user. Account transaction reads return
-202 while syncing/unavailable, 502 for FAILED data, and 409 for a disconnected bank.
-Only a successful sync can return 200 with an empty transaction list. Successful
+202 only while initial sync is pending, 502 for FAILED data, and 409 for a disconnected
+bank. Unavailable data without imported rows returns 200 with []; after an import,
+cached rows return 200 even during refresh. Successful
 transaction reads now use the same {success:true,data:[...]} envelope as accounts.
 
 ## Deployment and operation
@@ -165,3 +167,7 @@ not successful event processing. No live bank event or migration was sent/applie
 during implementation.
 
 Provider documentation: https://docs.mono.co/docs/financial-data/connect-link
+
+For account removal, stable session states, signed transaction amounts and monitoring,
+see handoff-operations.md. Unavailable transaction data returns a successful empty
+collection; 202 is reserved for an initial sync still pending.

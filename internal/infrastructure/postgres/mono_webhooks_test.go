@@ -108,7 +108,7 @@ func TestWebhookConnectionOrderIdempotencyAndReadiness(t *testing.T) {
 	if err != nil || !found {
 		t.Fatal(err)
 	}
-	if status.Status != "connected" || status.DataStatus != "AVAILABLE" || status.SyncStatus != "syncing" || status.TransactionsReady || status.AccountID == nil {
+	if status.Status != "syncing" || status.DataStatus != "AVAILABLE" || status.SyncStatus != "syncing" || status.TransactionsReady || status.AccountID == nil {
 		t.Fatalf("bad status %+v", status)
 	}
 	if _, found, err := r.GetLinkSession(ctx, "session-a", "bob"); err != nil || found {

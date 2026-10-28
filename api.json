@@ -1,0 +1,1704 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "TrackFund API",
+    "version": "0.1.0",
+    "description": "Minimal OpenAPI spec for TrackFund"
+  },
+  "paths": {
+    "/api/profile/me": {
+      "get": {
+        "summary": "Get the signed-in user?s profile",
+        "tags": [
+          "Profile"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Returns only the signed-in user. Cache-Control: no-store. No password hashes or verification codes are returned.",
+        "responses": {
+          "200": {
+            "description": "Current authenticated profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Profile"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "id": "user_123",
+                    "fullName": "Sample User",
+                    "email": "user@example.com",
+                    "phoneNumber": "+2348012345678",
+                    "photoUrl": null,
+                    "pendingEmail": null,
+                    "emailChangeId": null,
+                    "emailChangeExpiresAt": null,
+                    "createdAt": "2026-10-27T09:00:00Z",
+                    "updatedAt": "2026-10-27T09:30:00Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, revoked or expired access token",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Missing, invalid, revoked or expired access token",
+                  "code": "unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Profile was not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Profile was not found",
+                  "code": "profile_not_found"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Profile service unavailable",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Profile service unavailable",
+                  "code": "profile_unavailable"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update the signed-in user?s profile",
+        "tags": [
+          "Profile"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Partial update. Email changes send a verification code to the new address; email remains unchanged and pendingEmail/emailChangeId are returned. Repeat the email PATCH to resend (five requests/hour). Send the current email to cancel a pending change. Fields such as id, userId, role and status are rejected. Null clears phoneNumber/photoUrl. 20 validated updates/minute/user. Photo URL assignment does not upload an avatar. Local phone numbers beginning with 0 (10-11 digits) are supported and preserved without guessing a country. Avatar uploads use POST /api/profile/me/avatar.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "fullName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "phoneNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "International number with country code; common separators are removed."
+                  },
+                  "photoUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "nullable": true,
+                    "description": "HTTPS image URL without credentials or fragment, or null."
+                  }
+                }
+              },
+              "example": {
+                "fullName": "Sample User",
+                "phoneNumber": "+2348012345678"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current authenticated profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Profile"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "id": "user_123",
+                    "fullName": "Sample User",
+                    "email": "user@example.com",
+                    "phoneNumber": "+2348012345678",
+                    "photoUrl": null,
+                    "pendingEmail": null,
+                    "emailChangeId": null,
+                    "emailChangeExpiresAt": null,
+                    "createdAt": "2026-10-27T09:00:00Z",
+                    "updatedAt": "2026-10-27T09:30:00Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Malformed JSON",
+                  "code": "invalid_json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Missing or invalid session",
+                  "code": "unauthorized"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Profile was not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Profile was not found",
+                  "code": "profile_not_found"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already belongs to another user",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Email already belongs to another user",
+                  "code": "email_conflict"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds 8 KiB",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Request exceeds 8 KiB",
+                  "code": "request_too_large"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Field validation failed",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Field validation failed",
+                  "code": "validation_failed",
+                  "errors": {
+                    "email": "Enter a valid email address"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many profile or email requests; see Retry-After",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Too many profile or email requests; see Retry-After",
+                  "code": "profile_rate_limited"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage or email delivery unavailable; other valid profile fields may already have been saved",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Storage or email delivery unavailable; other valid profile fields may already have been saved",
+                  "code": "verification_delivery_failed"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/me/email/verify": {
+      "post": {
+        "summary": "Verify a pending profile email change",
+        "tags": [
+          "Profile"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Code expires after ten minutes and permits five wrong attempts. A successful change revokes existing access and refresh tokens; sign in again with the new email. Twenty verification requests/minute/user. Codes are never returned or logged by the production profile API.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "challengeId",
+                  "code"
+                ],
+                "properties": {
+                  "challengeId": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{32}$"
+                  },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[0-9]{6}$"
+                  }
+                }
+              },
+              "example": {
+                "challengeId": "0123456789abcdef0123456789abcdef",
+                "code": "123456"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Email changed; fresh login required",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "id": "user_123",
+                    "fullName": "Sample User",
+                    "email": "new@example.com",
+                    "phoneNumber": "+2348012345678",
+                    "photoUrl": null,
+                    "pendingEmail": null,
+                    "emailChangeId": null,
+                    "emailChangeExpiresAt": null,
+                    "createdAt": "2026-10-27T09:00:00Z",
+                    "updatedAt": "2026-10-27T09:30:00Z"
+                  },
+                  "signInRequired": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Malformed JSON",
+                  "code": "invalid_json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Missing or invalid session",
+                  "code": "unauthorized"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email became unavailable before verification",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Email became unavailable before verification",
+                  "code": "email_conflict"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds 8 KiB",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Request exceeds 8 KiB",
+                  "code": "request_too_large"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid, expired, replaced or non-owned challenge/code",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Invalid, expired, replaced or non-owned challenge/code",
+                  "code": "invalid_email_code",
+                  "errors": {
+                    "email": "Enter a valid email address"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Attempt or request limit exceeded; request a new code or wait",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Attempt or request limit exceeded; request a new code or wait",
+                  "code": "email_attempts_exhausted"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Profile service unavailable",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": false,
+                  "message": "Profile service unavailable",
+                  "code": "profile_unavailable"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mono/link-session/{reference}": {
+      "get": {
+        "summary": "Get the authenticated user?s Mono connection session",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "reference",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connection and transaction-readiness status",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "reference": "saved-reference",
+                    "status": "syncing",
+                    "accountId": "internal-account-id",
+                    "dataStatus": "AVAILABLE",
+                    "availableData": [
+                      "transactions",
+                      "balance"
+                    ],
+                    "transactionsReady": false,
+                    "syncStatus": "syncing"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "404": {
+            "description": "Session missing or owned by another user"
+          },
+          "503": {
+            "description": "Session storage temporarily unavailable"
+          }
+        },
+        "description": "Owner-only polling. Initial progression: pending -> connected (account committed) -> syncing (provider transactions available, import pending) -> available (initial import complete). A later refresh preserves available with syncStatus=syncing. failed is terminal for a failed initiation or removed link; provider FAILED is also reported as failed. syncStatus is syncing, ready, failed or unavailable. transactionsReady describes whether the latest ready provider snapshot has been imported."
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "summary": "Register user",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fullName": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "fullName",
+                  "email",
+                  "password"
+                ]
+              },
+              "example": {
+                "fullName": "Jane Developer",
+                "email": "jane@example.com",
+                "phone": "",
+                "password": "Str0ngP@ssw0rd"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OTP sent",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "OTP sent to jane@example.com",
+                  "data": {
+                    "email": "jane@example.com",
+                    "requiresOtp": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "deviceName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email",
+                  "password"
+                ]
+              },
+              "example": {
+                "email": "jane@example.com",
+                "password": "Str0ngP@ssw0rd",
+                "deviceName": "Laptop"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "Login successful.",
+                  "data": {
+                    "user": {
+                      "id": "user_1",
+                      "fullName": "Jane Developer",
+                      "email": "jane@example.com",
+                      "role": "USER"
+                    },
+                    "accessToken": "<jwt>",
+                    "refreshToken": "<refresh>"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/verify-otp": {
+      "post": {
+        "summary": "Verify OTP (confirm registration or verify existing user)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "otp": {
+                    "type": "string"
+                  },
+                  "required": [
+                    "email",
+                    "otp"
+                  ]
+                }
+              },
+              "example": {
+                "email": "jane@example.com",
+                "otp": "123456"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "Email verified successfully. You can now log in."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/resend-otp": {
+      "post": {
+        "summary": "Resend OTP",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "email": "jane@example.com"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "OTP resent to jane@example.com"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/forgot-password": {
+      "post": {
+        "summary": "Forgot password (send OTP)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "email": "jane@example.com"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/api/auth/reset-password": {
+      "post": {
+        "summary": "Reset password",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "otp": {
+                    "type": "string"
+                  },
+                  "newPassword": {
+                    "type": "string"
+                  },
+                  "required": [
+                    "email",
+                    "otp",
+                    "newPassword"
+                  ]
+                }
+              },
+              "example": {
+                "email": "jane@example.com",
+                "otp": "123456",
+                "newPassword": "NewP@ssw0rd"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/api/auth/google": {
+      "post": {
+        "summary": "Sign in with Google (provide id_token from client)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "idToken": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "idToken": "<google-id-token>"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "Login successful.",
+                  "data": {
+                    "user": {
+                      "id": "user_1",
+                      "fullName": "Google User",
+                      "email": "google@example.com",
+                      "role": "USER"
+                    },
+                    "accessToken": "<jwt>",
+                    "refreshToken": "<refresh>"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mono/link-session": {
+      "post": {
+        "summary": "Create a Mono link session (returns Mono Connect URL for frontend/mobile)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Create a pending hosted-link session. Customer and meta.ref come from the server. Redirect aliases must agree and match the configured allowlist. Hosted completion uses webhooks, not a guaranteed redirect code. Mobile clients must explicitly send trackiq://mono/callback configured as MONO_MOBILE_REDIRECT_URL. MONO_WEB_REDIRECT_URL separately configures a served HTTPS frontend callback. Redirects must exactly match configuration and are never rewritten. The old TrackFund mobile scheme is rejected.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "redirect_url": {
+                    "type": "string",
+                    "description": "Frontend callback URL passed to Mono."
+                  },
+                  "redirectUrl": {
+                    "type": "string",
+                    "description": "Compatibility alias; backend normalizes this to `redirect_url`."
+                  },
+                  "callback_url": {
+                    "type": "string",
+                    "description": "Compatibility alias; backend normalizes this to `redirect_url`."
+                  },
+                  "callbackUrl": {
+                    "type": "string",
+                    "description": "Compatibility alias; backend normalizes this to `redirect_url`."
+                  },
+                  "scope": {
+                    "type": "string",
+                    "default": "auth",
+                    "example": "auth",
+                    "description": "Compatibility field; server always uses auth."
+                  }
+                }
+              },
+              "example": {
+                "redirect_url": "trackiq://mono/callback"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pending link: data contains mono_url, compatibility client_token, reference, status, scope, redirect_url",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "client_token": {
+                          "type": "string",
+                          "description": "Non-empty link credential. Uses Mono client_token when present, otherwise mono_url for current Mono v2 responses."
+                        },
+                        "mono_url": {
+                          "type": "string"
+                        },
+                        "scope": {
+                          "type": "string"
+                        },
+                        "redirect_url": {
+                          "type": "string"
+                        },
+                        "reference": {
+                          "type": "string",
+                          "description": "Server-generated reference persisted against the authenticated user."
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "mono_url",
+                        "reference",
+                        "status"
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "client_token": "https://link.mono.co/ALB65XCPXCOU",
+                    "mono_url": "https://link.mono.co/ALB65XCPXCOU",
+                    "scope": "auth",
+                    "redirect_url": "trackiq://mono/callback",
+                    "reference": "server-generated-reference",
+                    "status": "pending"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "422": {
+            "description": "Missing, conflicting or non-allowed callback, or incomplete user profile"
+          },
+          "502": {
+            "description": "Provider failure or unusable link response"
+          },
+          "503": {
+            "description": "Session storage unavailable"
+          },
+          "504": {
+            "description": "Provider timeout"
+          }
+        }
+      }
+    },
+    "/api/mono/complete-link": {
+      "post": {
+        "summary": "Exchange Mono short-lived code on server and persist accounts",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Exchange a short-lived authorization code server-side and commit the owned account before returning. Idempotent account persistence. Provider credentials and raw provider responses are never returned.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              },
+              "example": {
+                "code": "mono_code_abc123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account link committed",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "linked": true
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request / invalid code"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/mono/accounts": {
+      "post": {
+        "summary": "Exchange Mono short-lived code on server and persist account",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Flutter may call this after Mono redirects back with a code. Server exchanges it with Mono and stores the linked account.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              },
+              "example": {
+                "code": "mono_code_abc123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account link committed",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "linked": true
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request / missing code"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      },
+      "get": {
+        "summary": "List Mono accounts for the authenticated user",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Owned links; a new user receives an empty array",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MonoAccount"
+                      }
+                    }
+                  }
+                },
+                "examples": {
+                  "empty": {
+                    "value": {
+                      "success": true,
+                      "data": []
+                    }
+                  },
+                  "linked": {
+                    "value": {
+                      "success": true,
+                      "data": [
+                        {
+                          "id": "internal-account-id",
+                          "monoAccountId": "mono-account-id",
+                          "accountName": "Everyday account",
+                          "accountNumber": "0123456789",
+                          "bankCode": "058",
+                          "bankName": "Guaranty Trust Bank",
+                          "bankLogoUrl": null,
+                          "currency": "NGN"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/mono/accounts/{id}/transactions": {
+      "get": {
+        "summary": "Get transactions for an internal mono account id",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cached transactions, including a successful empty result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MonoTransaction"
+                      }
+                    }
+                  }
+                },
+                "examples": {
+                  "empty": {
+                    "value": {
+                      "success": true,
+                      "data": []
+                    }
+                  },
+                  "debit": {
+                    "value": {
+                      "success": true,
+                      "data": [
+                        {
+                          "id": "internal-tx-id",
+                          "transactionId": "stable-tx-id",
+                          "amount": -500000,
+                          "currency": "NGN",
+                          "paidAt": "2026-10-28T00:00:00Z",
+                          "description": "Card purchase"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Initial provider transaction sync is pending",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "status": "syncing",
+                    "transactions": []
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Account not found"
+          },
+          "409": {
+            "description": "Bank account disconnected"
+          },
+          "502": {
+            "description": "Provider data retrieval failed"
+          },
+          "503": {
+            "description": "Account storage unavailable"
+          }
+        },
+        "description": "Integer minor units: 500000 is NGN 5,000.00. Debit amounts are negative, credit amounts positive; unknown direction preserves the provider sign. Stable transaction IDs and UTC ISO-8601 paidAt timestamps. 202 is used only while an initial sync is pending. Once synced, cached transactions return 200 even while a later refresh is pending. An unavailable account without imported data returns 200 with an empty array; FAILED and DISCONNECTED remain explicit errors. Removed/foreign accounts return 404."
+      }
+    },
+    "/api/mono/webhook": {
+      "post": {
+        "summary": "Mono webhook endpoint (public)",
+        "description": "Public endpoint authenticated only by mono-webhook-secret. Persist events before 200; duplicate event IDs with identical canonical payloads return 200. PostgreSQL worker processes events transactionally with retries. Do not send a Bearer token.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonoWebhook"
+              },
+              "example": {
+                "event": "mono.events.account_connected",
+                "event_id": "unique-event-id",
+                "timestamp": "2026-10-26T09:00:00Z",
+                "data": {
+                  "id": "provider-account-id",
+                  "meta": {
+                    "ref": "saved-reference",
+                    "data_status": "PROCESSING"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Durably received; business processing continues asynchronously"
+          },
+          "400": {
+            "description": "Invalid event envelope"
+          },
+          "401": {
+            "description": "Missing or incorrect webhook secret"
+          },
+          "409": {
+            "description": "Same event ID used for a different payload"
+          },
+          "413": {
+            "description": "Payload exceeds 1 MiB"
+          },
+          "503": {
+            "description": "Storage or secret configuration unavailable; retry"
+          }
+        },
+        "parameters": [
+          {
+            "name": "mono-webhook-secret",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/funds": {
+      "post": {
+        "summary": "Create fund",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "targetAmount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "targetAmount",
+                  "currency"
+                ]
+              },
+              "example": {
+                "name": "School Fund",
+                "targetAmount": 100000,
+                "currency": "USD"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "created",
+            "content": {
+              "application/json": {
+                "example": {
+                  "fundId": "fund_1"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked access token"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/funds/{id}": {
+      "get": {
+        "summary": "Get fund",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": "fund_1",
+                  "name": "School Fund",
+                  "targetAmount": 100000,
+                  "currency": "USD",
+                  "totalContributions": 25000,
+                  "remainingAmount": 75000,
+                  "contributionCount": 3
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked access token"
+          },
+          "403": {
+            "description": "Fund belongs to another user"
+          },
+          "404": {
+            "description": "Fund not found or legacy fund has no verified owner"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/funds/{id}/contributions": {
+      "post": {
+        "summary": "Record contribution",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "contributor": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "amount",
+                  "contributor"
+                ]
+              },
+              "example": {
+                "amount": 5000,
+                "contributor": "Alice"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "accepted",
+            "content": {
+              "application/json": {
+                "example": {
+                  "accepted": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked access token"
+          },
+          "403": {
+            "description": "Fund belongs to another user"
+          },
+          "404": {
+            "description": "Fund not found or legacy fund has no verified owner"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/me/avatar": {
+      "post": {
+        "summary": "Upload and replace the signed-in user avatar",
+        "description": "Exactly one multipart file field, maximum 5 MiB. JPEG, PNG and WebP are decoded and converted to a square 512x512 PNG with metadata removed. Maximum 12 megapixels and 8192 pixels per dimension. Ten uploads/hour/user. A unique durable HTTPS URL is committed to the same profile returned by GET /api/profile/me. Prior managed objects are deleted asynchronously after commit. Storage must be configured.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              },
+              "encoding": {
+                "file": {
+                  "contentType": "image/jpeg, image/png, image/webp"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New avatar saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "photoUrl"
+                      ],
+                      "properties": {
+                        "photoUrl": {
+                          "type": "string",
+                          "format": "uri",
+                          "example": "https://res.cloudinary.com/your-cloud-name/image/upload/v1/profile/user/avatar.png"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "photoUrl": "https://res.cloudinary.com/your-cloud-name/image/upload/v1/profile/user/avatar.png"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid image, excessive dimensions or multipart fields"
+          },
+          "401": {
+            "description": "Missing or invalid access token"
+          },
+          "413": {
+            "description": "File exceeds 5 MiB"
+          },
+          "415": {
+            "description": "Unsupported image type or MIME mismatch"
+          },
+          "429": {
+            "description": "Upload rate limit reached"
+          },
+          "503": {
+            "description": "Storage is not configured or upload/persistence failed"
+          }
+        }
+      }
+    },
+    "/api/mono/accounts/{id}": {
+      "delete": {
+        "summary": "Remove an owned bank-account link",
+        "description": "Atomically hides the link and schedules a durable Mono unlink job. Imported transactions are retained internally for audit but hidden from all app reads. Delayed webhooks and sync jobs cannot restore or import into a removed link. Repeat deletion by the same owner returns 204. Missing or foreign IDs return 404. Provider unlink retries in the background; a fresh Mono authorization is required to reconnect.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Link removed, or already removed by this owner; no body"
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "404": {
+            "description": "Account missing or owned by another user"
+          },
+          "503": {
+            "description": "Removal could not be committed; retry"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Profile": {
+        "type": "object",
+        "required": [
+          "id",
+          "fullName",
+          "email",
+          "phoneNumber",
+          "photoUrl",
+          "pendingEmail",
+          "emailChangeId",
+          "emailChangeExpiresAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phoneNumber": {
+            "type": "string",
+            "description": "Normalized international number; empty if unset."
+          },
+          "photoUrl": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "pendingEmail": {
+            "type": "string",
+            "format": "email",
+            "nullable": true,
+            "description": "Not used for sign-in until verified."
+          },
+          "emailChangeId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Pass as challengeId when verifying the email change."
+          },
+          "emailChangeExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MonoAccount": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "monoAccountId": {
+            "type": "string"
+          },
+          "accountName": {
+            "type": "string"
+          },
+          "accountNumber": {
+            "type": "string"
+          },
+          "bankCode": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "bankName": {
+            "type": "string",
+            "description": "Provider institution name, bank-code mapping, or Linked bank when unknown",
+            "example": "Guaranty Trust Bank"
+          },
+          "bankLogoUrl": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "Null until a verified logo source is configured. Arbitrary provider image URLs are never returned."
+          }
+        },
+        "required": [
+          "id",
+          "monoAccountId",
+          "accountName",
+          "accountNumber",
+          "bankCode",
+          "bankName",
+          "currency"
+        ]
+      },
+      "MonoTransaction": {
+        "type": "object",
+        "properties": {
+          "transactionId": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Signed integer minor units; debit negative, credit positive",
+            "example": -500000
+          },
+          "currency": {
+            "type": "string"
+          },
+          "paidAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "MonoWebhook": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
+	"trackfund/internal/infrastructure/telemetry"
 
 	"github.com/jackc/pgx/v5"
 	authapp "trackfund/internal/application/auth"
@@ -61,6 +63,16 @@ func (r *MonoRepository) ProcessNextWebhook(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	e, workErr := monoapp.Decode(body)
+	beforeState, afterState := "", ""
+	if update, parseErr := e.AccountUpdate(); parseErr == nil && !e.IsTransactions() {
+		if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, "mono-account:"+update.Account.ID); err != nil {
+			return false, err
+		}
+		beforeState, err = webhookAccountState(ctx, tx, update.Account.ID)
+		if err != nil {
+			return false, err
+		}
+	}
 	if workErr == nil {
 		workErr = r.applyWebhook(ctx, tx, e)
 	}
@@ -89,7 +101,33 @@ func (r *MonoRepository) ProcessNextWebhook(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, tx.Commit(ctx)
+	if update, parseErr := e.AccountUpdate(); parseErr == nil && !e.IsTransactions() {
+		afterState, err = webhookAccountState(ctx, tx, update.Account.ID)
+		if err != nil {
+			return false, err
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	code := "processed"
+	if workErr != nil {
+		code = "processing_failed"
+		if errors.Is(workErr, monoapp.ErrOwnershipConflict) {
+			code = "ownership_conflict"
+		} else if errors.Is(workErr, monoapp.ErrInvalidEvent) {
+			code = "invalid_payload"
+		} else if errors.Is(workErr, monoapp.ErrMappingPending) {
+			code = "mapping_pending"
+		}
+		telemetry.Inc("mono_webhook_processing_failures_total")
+	}
+	attrs := []any{"event_id", id, "event_type", e.Type, "result", code, "previous_state", beforeState, "new_state", afterState}
+	if update, parseErr := e.AccountUpdate(); parseErr == nil {
+		attrs = append(attrs, "reference", update.Meta.Ref, "mono_account_id", update.Account.ID, "data_status", update.Meta.DataStatus)
+	}
+	slog.InfoContext(ctx, "mono.webhook.processed", attrs...)
+	return true, nil
 }
 func (r *MonoRepository) applyWebhook(ctx context.Context, tx pgx.Tx, e monoapp.Event) error {
 	if !e.Known() {
@@ -109,25 +147,32 @@ func (r *MonoRepository) applyWebhook(ctx context.Context, tx pgx.Tx, e monoapp.
 	}
 	var userID string
 	var sessionAccount *string
+	var sessionState string
 	if update.Meta.Ref != "" {
-		err = tx.QueryRow(ctx, `SELECT user_id,mono_account_id FROM mono_link_sessions WHERE reference=$1 FOR UPDATE`, update.Meta.Ref).Scan(&userID, &sessionAccount)
+		err = tx.QueryRow(ctx, `SELECT user_id,mono_account_id,status FROM mono_link_sessions WHERE reference=$1 FOR UPDATE`, update.Meta.Ref).Scan(&userID, &sessionAccount, &sessionState)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return monoapp.ErrMappingPending
 		}
 		if err != nil {
 			return err
 		}
+		if sessionState == "failed" {
+			return nil
+		}
 		if sessionAccount != nil && *sessionAccount != a.ID {
 			return monoapp.ErrOwnershipConflict
 		}
 	}
 	var existingOwner string
-	var previous *time.Time
-	err = tx.QueryRow(ctx, `SELECT user_id,last_event_at FROM mono_accounts WHERE mono_account_id=$1 FOR UPDATE`, a.ID).Scan(&existingOwner, &previous)
+	var previous, deleted *time.Time
+	err = tx.QueryRow(ctx, `SELECT user_id,last_event_at,deleted_at FROM mono_accounts WHERE mono_account_id=$1 FOR UPDATE`, a.ID).Scan(&existingOwner, &previous, &deleted)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
 	exists := err == nil
+	if deleted != nil {
+		return nil
+	} // Tombstones are permanent for this Mono authorization.
 	if userID == "" {
 		if !exists {
 			return monoapp.ErrMappingPending
@@ -173,12 +218,16 @@ func (r *MonoRepository) applyWebhookTransactions(ctx context.Context, tx pgx.Tx
 	}
 	for _, item := range transactions {
 		var accountID string
-		err = tx.QueryRow(ctx, `SELECT id FROM mono_accounts WHERE mono_account_id=$1`, item.AccountID).Scan(&accountID)
+		var deleted *time.Time
+		err = tx.QueryRow(ctx, `SELECT id,deleted_at FROM mono_accounts WHERE mono_account_id=$1 FOR SHARE`, item.AccountID).Scan(&accountID, &deleted)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return monoapp.ErrMappingPending
 		}
 		if err != nil {
 			return err
+		}
+		if deleted != nil {
+			continue
 		}
 		id, err := authapp.RandomID()
 		if err != nil {
@@ -206,7 +255,7 @@ func (r *MonoRepository) GetLinkSession(ctx context.Context, reference, userID s
 	var metadata []byte
 	var synced, latest *time.Time
 	err := r.pool.QueryRow(ctx, `SELECT s.reference,s.status,a.id,COALESCE(a.metadata,'{}'::jsonb),a.last_synced_at,a.last_event_at
- FROM mono_link_sessions s LEFT JOIN mono_accounts a ON a.mono_account_id=s.mono_account_id AND a.user_id=s.user_id
+ FROM mono_link_sessions s LEFT JOIN mono_accounts a ON a.mono_account_id=s.mono_account_id AND a.user_id=s.user_id AND a.deleted_at IS NULL
  WHERE s.reference=$1 AND s.user_id=$2`, reference, userID).Scan(&result.Reference, &result.Status, &result.AccountID, &metadata, &synced, &latest)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, false, nil
@@ -226,14 +275,33 @@ func (r *MonoRepository) GetLinkSession(ctx context.Context, reference, userID s
 	if snapshot.Meta.RetrievedData != nil {
 		result.AvailableData = snapshot.Meta.RetrievedData
 	}
-	result.TransactionsReady = monoapp.TransactionsAvailable(metadata) && synced != nil && (latest == nil || !synced.Before(*latest))
+	result.TransactionsReady = result.Status != "failed" && monoapp.TransactionsAvailable(metadata) && synced != nil && (latest == nil || !synced.Before(*latest))
 	switch {
 	case result.TransactionsReady:
 		result.SyncStatus = "ready"
+		result.Status = "available"
 	case result.DataStatus == "FAILED":
 		result.SyncStatus = "failed"
+		result.Status = "failed"
 	case result.DataStatus == "UNAVAILABLE" || result.DataStatus == "DISCONNECTED" || (result.DataStatus == "PARTIAL" && !monoapp.TransactionsAvailable(metadata)):
 		result.SyncStatus = "unavailable"
 	}
+	if synced != nil && result.Status != "failed" && result.DataStatus != "FAILED" && result.DataStatus != "DISCONNECTED" {
+		result.Status = "available"
+	}
+	if result.Status == "failed" {
+		result.SyncStatus = "failed"
+	} else if synced == nil && result.SyncStatus == "syncing" && monoapp.TransactionsAvailable(metadata) && result.AccountID != nil {
+		result.Status = "syncing"
+	}
 	return result, true, nil
+}
+
+func webhookAccountState(ctx context.Context, tx pgx.Tx, monoID string) (string, error) {
+	var state string
+	err := tx.QueryRow(ctx, "SELECT CASE WHEN deleted_at IS NOT NULL THEN 'removed' ELSE COALESCE(metadata->'meta'->>'data_status','PROCESSING') END FROM mono_accounts WHERE mono_account_id=$1", monoID).Scan(&state)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "missing", nil
+	}
+	return state, err
 }

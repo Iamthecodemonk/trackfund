@@ -54,6 +54,7 @@ type Account struct {
 	Currency      string `json:"currency"`
 	Institution   struct {
 		BankCode string `json:"bankCode"`
+		Name     string `json:"name"`
 	} `json:"institution"`
 }
 type AccountEvent struct {
@@ -102,11 +103,16 @@ func (e Event) AccountUpdate() (AccountEvent, error) {
 	}
 	meta, _ := json.Marshal(d.Meta)
 	snapshot["meta"] = meta
+	if d.Account.Institution.Name != "" {
+		name, _ := json.Marshal(d.Account.Institution.Name)
+		snapshot["bank_name"] = name
+	}
 	normalized, _ := json.Marshal(snapshot)
 	return AccountEvent{Account: d.Account, Meta: d.Meta, Snapshot: normalized}, nil
 }
 
 type Transaction struct {
+	Type        string    `json:"type,omitempty"`
 	ID          string    `json:"id"`
 	AccountID   string    `json:"account_id"`
 	Amount      int64     `json:"amount"`
@@ -126,6 +132,11 @@ func (e Event) Transactions() ([]Transaction, error) {
 	for _, raw := range d.Transactions {
 		var tx Transaction
 		if err := json.Unmarshal(raw, &tx); err != nil || tx.ID == "" || tx.AccountID == "" || tx.Currency == "" || tx.PaidAt.IsZero() {
+			return nil, ErrInvalidEvent
+		}
+		var signErr error
+		tx.Amount, signErr = SignedAmount(tx.Amount, tx.Type)
+		if signErr != nil {
 			return nil, ErrInvalidEvent
 		}
 		result = append(result, tx)

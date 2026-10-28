@@ -54,7 +54,7 @@ func syncMonoAccount(ctx context.Context, app *App, monoAccountID string) error 
 		return err
 	}
 	if !found {
-		return fmt.Errorf("account not found")
+		return nil // Deleted accounts make delayed jobs harmless.
 	}
 	if !monoapp.TransactionsAvailable(account.Metadata) {
 		return nil
@@ -93,6 +93,7 @@ func syncMonoAccount(ctx context.Context, app *App, monoAccountID string) error 
 			"id":          tx.ID,
 			"account_id":  tx.AccountID,
 			"amount":      tx.Amount,
+			"type":        tx.Type,
 			"currency":    tx.Currency,
 			"paid_at":     tx.PaidAt,
 			"description": tx.Description,

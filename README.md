@@ -156,3 +156,6 @@ Existing success payloads are preserved in this security step.
 Authenticated profile GET/PATCH and verified email changes are implemented.
 See [profile-api.md](docs/profile-api.md) for payloads, code verification, session
 revocation, shared rate limits, migrations, tests and remaining profile features.
+
+TrackIQ app handoff: [operations and live acceptance](docs/handoff-operations.md),
+[avatar storage setup](docs/avatar-storage.md). The API specification export is api.json.

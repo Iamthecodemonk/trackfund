@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 	monoapp "trackfund/internal/application/mono"
+	"trackfund/internal/infrastructure/telemetry"
 )
 
 func (s *Server) monoWebhook(w http.ResponseWriter, r *http.Request) {
@@ -22,6 +23,7 @@ func (s *Server) monoWebhook(w http.ResponseWriter, r *http.Request) {
 	expected := sha256.Sum256([]byte(s.app.Config.MonoWebhookSecret))
 	provided := sha256.Sum256([]byte(r.Header.Get("mono-webhook-secret")))
 	if subtle.ConstantTimeCompare(expected[:], provided[:]) != 1 {
+		telemetry.Inc("mono_webhook_auth_failures_total")
 		writeAPIError(w, 401, "unauthorized", "Invalid webhook secret", "")
 		return
 	}
@@ -51,6 +53,7 @@ func (s *Server) monoWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	telemetry.Inc("mono_webhooks_received_total")
 	// No business processing or upstream calls occur before acknowledgement.
 	writeAPISuccess(w, http.StatusOK, map[string]bool{"received": true})
 }

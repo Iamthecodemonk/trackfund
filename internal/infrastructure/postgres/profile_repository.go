@@ -83,6 +83,12 @@ func (r *ProfileRepository) Update(ctx context.Context, userID string, c profile
 	if err != nil {
 		return profileapp.Profile{}, err
 	}
+	if c.PhotoURL.Set {
+		var next *string = c.PhotoURL.Value
+		if _, err = tx.Exec(ctx, `UPDATE profile_avatar_objects SET status='garbage',delete_after=NOW()+INTERVAL '5 minutes' WHERE user_id=$1 AND status='active' AND photo_url IS DISTINCT FROM $2`, userID, next); err != nil {
+			return profileapp.Profile{}, err
+		}
+	}
 	if c.Email.Set {
 		if strings.EqualFold(*c.Email.Value, email) {
 			if _, err = tx.Exec(ctx, "DELETE FROM profile_email_changes WHERE user_id=$1", userID); err != nil {

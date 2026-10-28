@@ -10,9 +10,10 @@ and token version. GET and PATCH share the same response shape.
 - GET /api/profile/me
 - PATCH /api/profile/me
 - POST /api/profile/me/email/verify
+- POST /api/profile/me/avatar (multipart file; see avatar-storage.md)
 
 PATCH supports fullName (trimmed, 1?120 characters), email (normalized lower-case),
-phoneNumber (international format, common separators removed), and photoUrl (HTTPS
+phoneNumber (international or local 0-prefixed format, common separators removed), and photoUrl (HTTPS
 URL without credentials/fragment). Null clears phoneNumber/photoUrl. The phone
 value becomes an empty string if cleared; photoUrl becomes null. Unknown/protected
 fields are rejected with 422 and field-level errors. Body limit is 8 KiB.
@@ -109,8 +110,9 @@ Without the variable, database integration tests are explicitly skipped.
 
 ## Remaining profile work
 
-Avatar FILE upload/processing/storage, appearance and notification preferences,
-notification inbox/read actions, device push tokens, account disconnection and
-account deletion are not implemented in this stage. Setting photoUrl only records
-a supplied HTTPS URL; it does not fetch/upload/process/delete an image. The avatar
-stage must define the hosting/storage provider and replacement lifecycle.
+Appearance/notification preferences, notification inbox actions, device push tokens
+and deleting the TrackIQ user account remain outside this Mono/Profile handoff.
+Bank-link removal and avatar upload are now implemented; see handoff-operations.md.
+
+Avatar uploads, storage configuration and cleanup are implemented; see avatar-storage.md.
+The photoUrl PATCH still saves an existing HTTPS URL without fetching it.

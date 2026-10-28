@@ -93,6 +93,7 @@ func (s *Server) routes() {
 				prot.Post("/complete-link", s.completeMonoLink)
 				prot.Post("/accounts", s.createMonoAccount)
 				prot.Get("/accounts", s.listMonoAccounts)
+				prot.Delete("/accounts/{id}", s.deleteMonoAccount)
 				prot.Get("/accounts/{id}/transactions", s.getMonoAccountTransactions)
 			})
 		})
@@ -114,8 +115,11 @@ func (s *Server) routes() {
 	profileRoutes.Get("/api/profile/me", s.getProfile)
 	profileRoutes.Patch("/api/profile/me", s.patchProfile)
 	profileRoutes.Post("/api/profile/me/email/verify", s.verifyProfileEmail)
+	profileRoutes.Post("/api/profile/me/avatar", s.uploadProfileAvatar)
+	s.router.Get("/internal/metrics", s.operationalMetrics)
 	// serve OpenAPI and a simple docs page
 	s.router.Get("/openapi.json", s.serveOpenAPI)
+	s.router.Get("/api.json", s.serveOpenAPI)
 	s.router.Get("/docs", s.serveDocs)
 }
 

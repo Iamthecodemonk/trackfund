@@ -28,16 +28,18 @@ type Config struct {
 	SMTPFrom   string
 	SMTPUseTLS bool
 	// Mono (open banking) config
-	MonoPublicKey           string
-	MonoSecretKey           string
-	MonoBaseURL             string
-	MonoCallbackURL         string
-	MonoMobileRedirectURL   string
-	MonoWebRedirectURL      string
-	MonoAllowedRedirectURLs []string
-	MonoTimeoutSecs         int
-	MonoWebhookSecret       string
-	MonoDebugLogging        bool
+	MonoPublicKey                                              string
+	MonoSecretKey                                              string
+	MonoBaseURL                                                string
+	MonoCallbackURL                                            string
+	MonoMobileRedirectURL                                      string
+	MonoWebRedirectURL                                         string
+	MonoAllowedRedirectURLs                                    []string
+	MonoTimeoutSecs                                            int
+	MonoWebhookSecret                                          string
+	MonoDebugLogging                                           bool
+	CloudinaryCloudName, CloudinaryAPIKey, CloudinaryAPISecret string
+	OperationsToken                                            string
 	// App runtime
 	Env      string
 	LogLevel string
@@ -48,6 +50,10 @@ func Load() Config {
 
 	return Config{
 		Port:                    port,
+		CloudinaryCloudName:     strings.TrimSpace(os.Getenv("CLOUDINARY_CLOUD_NAME")),
+		CloudinaryAPIKey:        os.Getenv("CLOUDINARY_API_KEY"),
+		CloudinaryAPISecret:     os.Getenv("CLOUDINARY_API_SECRET"),
+		OperationsToken:         os.Getenv("OPERATIONS_TOKEN"),
 		JWTSecret:               os.Getenv("JWT_SECRET"),
 		DatabaseURL:             getenv("DATABASE_URL", "postgres://trackfund:trackfund@localhost:5432/trackfund?sslmode=disable"),
 		RedisAddr:               getenv("REDIS_ADDR", "localhost:6379"),
@@ -119,6 +125,9 @@ func getenvBool(key string, fallback bool) bool {
 // Validate rejects unsafe settings before opening network connections.
 // Errors name configuration fields without exposing their values.
 func (c Config) Validate() error {
+	if err := c.validateStorage(); err != nil {
+		return err
+	}
 	if err := c.validateMono(); err != nil {
 		return err
 	}

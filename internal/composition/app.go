@@ -7,6 +7,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 
 	authapp "trackfund/internal/application/auth"
+	"trackfund/internal/application/avatar"
 	fundsapp "trackfund/internal/application/funds"
 	"trackfund/internal/application/ports"
 	profileapp "trackfund/internal/application/profile"
@@ -14,6 +15,7 @@ import (
 	"trackfund/internal/infrastructure/eventstore"
 	"trackfund/internal/infrastructure/logger"
 	monoclient "trackfund/internal/infrastructure/mono"
+	"trackfund/internal/infrastructure/objectstorage"
 	"trackfund/internal/infrastructure/postgres"
 	"trackfund/internal/infrastructure/projections"
 	redisinfra "trackfund/internal/infrastructure/redis"
@@ -35,6 +37,7 @@ type App struct {
 	Queries      Queries
 	Auth         authapp.Service
 	Profile      *profileapp.Service
+	Avatar       *avatar.Service
 	Logger       *logger.Logger
 	Closer       func()
 	MonoRepo     *postgres.MonoRepository
@@ -90,14 +93,16 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 		_ = redisClient.Close()
 		db.Close()
 	})
-	// Check every 15 seconds for ready accounts due for a five-minute sync.
-	if client, err := StartAsynqWorker(bgCtx, cfg.RedisAddr, app); err == nil {
-		go startMonoSync(bgCtx, app, client, 15*time.Second)
-	}
 	app.Logger = lg
 	app.Config = cfg
 	app.MonoWebhooks = monoRepo
-	app.Profile = profileapp.NewService(postgres.NewProfileRepository(db), emailSender, cfg.JWTSecret)
+	profileRepo := postgres.NewProfileRepository(db)
+	app.Profile = profileapp.NewService(profileRepo, emailSender, cfg.JWTSecret)
+	if cfg.AvatarStorageConfigured() {
+		app.Avatar = &avatar.Service{Repo: profileRepo, Store: objectstorage.New(cfg)}
+	}
+	maintenanceDone := make(chan struct{})
+	go func() { defer close(maintenanceDone); startMaintenance(bgCtx, app, profileRepo) }()
 	// replace auth service with configured email sender
 	app.Auth = authapp.NewService(authRepo, emailSender, authapp.Config{
 		JWTSecret:         cfg.JWTSecret,
@@ -108,10 +113,15 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 		OTPRateLimitEvery: time.Hour,
 	})
 
+	// Check every 15 seconds for ready accounts due for a five-minute sync.
+	if client, err := StartAsynqWorker(bgCtx, cfg.RedisAddr, app); err == nil {
+		go startMonoSync(bgCtx, app, client, 15*time.Second)
+	}
+
 	webhookDone := make(chan struct{})
 	go func() { defer close(webhookDone); startMonoWebhookWorker(bgCtx, app) }()
 	previousCloser := app.Closer
-	app.Closer = func() { cancel(); <-webhookDone; previousCloser() }
+	app.Closer = func() { cancel(); <-webhookDone; <-maintenanceDone; previousCloser() }
 	return app, nil
 }
 

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"trackfund/internal/infrastructure/telemetry"
 
 	authapp "trackfund/internal/application/auth"
 	monoapp "trackfund/internal/application/mono"
@@ -88,6 +89,7 @@ func (s *Server) createMonoLinkSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.app.Config.AllowsMonoRedirect(redirect) {
+		telemetry.Inc("mono_invalid_redirect_total")
 		fail(http.StatusUnprocessableEntity, "invalid_callback_url", "Callback URL is not allowed")
 		return
 	}
@@ -107,6 +109,12 @@ func (s *Server) createMonoLinkSession(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := s.app.MonoClient.CreateLinkSession(r.Context(), payload)
 	if err != nil {
+		telemetry.Inc("mono_link_failures_total")
+		if marker, ok := s.app.MonoSessions.(interface {
+			MarkLinkSessionFailed(context.Context, string) error
+		}); ok {
+			_ = marker.MarkLinkSessionFailed(r.Context(), reference)
+		}
 		if monoclient.IsTimeoutError(err) {
 			fail(http.StatusGatewayTimeout, "mono_timeout", "Mono request timed out")
 		} else {
@@ -116,6 +124,12 @@ func (s *Server) createMonoLinkSession(w http.ResponseWriter, r *http.Request) {
 	}
 	link, parseErr := url.Parse(resp.Data.MonoURL)
 	if parseErr != nil || link.Scheme != "https" || link.Hostname() == "" || link.User != nil {
+		telemetry.Inc("mono_link_failures_total")
+		if marker, ok := s.app.MonoSessions.(interface {
+			MarkLinkSessionFailed(context.Context, string) error
+		}); ok {
+			_ = marker.MarkLinkSessionFailed(r.Context(), reference)
+		}
 		fail(http.StatusBadGateway, "invalid_mono_link_response", "Mono did not return a usable hosted link")
 		return
 	}
@@ -193,8 +207,14 @@ func (s *Server) completeMonoAccountLink(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeAPIError(w, 413, "request_too_large", "Request exceeds 4 KiB", "")
+			return
+		}
 		s.logMonoError(logName+".read_failed", err)
 		writeAPIStepError(w, http.StatusBadRequest, "exchange_code", "invalid_request_body", "Could not read request body", err.Error())
 		return
@@ -282,7 +302,7 @@ func (s *Server) completeMonoAccountLink(w http.ResponseWriter, r *http.Request,
 				slog.String("url", monoErr.URL),
 				slog.Int("status", monoErr.StatusCode),
 			)
-			writeAPIStepError(w, monoErr.StatusCode, "exchange_code", "mono_error", monoResponseMessage(monoErr.Body), monoErr.Body)
+			writeAPIStepError(w, http.StatusBadGateway, "exchange_code", "mono_error", "Mono could not exchange the authorization code", "")
 			return
 		}
 		var parseErr *monoclient.ResponseParseError
@@ -291,14 +311,14 @@ func (s *Server) completeMonoAccountLink(w http.ResponseWriter, r *http.Request,
 				slog.String("method", parseErr.Method),
 				slog.String("url", parseErr.URL),
 			)
-			writeAPIStepError(w, http.StatusBadGateway, "exchange_code", "mono_parse_error", "Could not parse Mono response", parseErr.Body)
+			writeAPIStepError(w, http.StatusBadGateway, "exchange_code", "mono_parse_error", "Could not parse Mono response", "")
 			return
 		}
 		s.logMonoError(logName+".mono_contact_error", err,
 			slog.String("method", http.MethodPost),
 			slog.String("url", monoURL),
 		)
-		writeAPIStepError(w, http.StatusBadGateway, "exchange_code", "mono_contact_error", "Could not contact Mono", err.Error())
+		writeAPIStepError(w, http.StatusBadGateway, "exchange_code", "mono_contact_error", "Could not contact Mono", "")
 		return
 	}
 
@@ -307,6 +327,11 @@ func (s *Server) completeMonoAccountLink(w http.ResponseWriter, r *http.Request,
 		slog.String("account_id", resp.Data.Account.ID),
 	)
 	if acct := resp.Data.Account; acct.ID != "" {
+		if acct.Name == "" || acct.BankName == "" {
+			if details, detailErr := s.app.MonoClient.AccountDetails(ctx, acct.ID); detailErr == nil {
+				acct = details
+			}
+		}
 		id, _ := authapp.RandomID()
 		metadata := map[string]any{
 			"id":             acct.ID,
@@ -314,6 +339,7 @@ func (s *Server) completeMonoAccountLink(w http.ResponseWriter, r *http.Request,
 			"name":           acct.Name,
 			"account_number": acct.AccountNumber,
 			"bank_code":      acct.BankCode,
+			"bank_name":      acct.BankName,
 			"currency":       acct.Currency,
 		}
 		if err := s.app.MonoRepo.UpsertAccount(ctx, id, cur.ID, acct.ID, acct.Provider, acct.Name, acct.AccountNumber, acct.BankCode, acct.Currency, metadata); err != nil {
@@ -321,14 +347,14 @@ func (s *Server) completeMonoAccountLink(w http.ResponseWriter, r *http.Request,
 				slog.String("mono_account_id", acct.ID),
 				slog.String("user_id", cur.ID),
 			)
-			writeAPIStepError(w, http.StatusInternalServerError, "store_account", "mono_account_save_failed", "Could not save Mono account", err.Error())
+			writeAPIStepError(w, http.StatusInternalServerError, "store_account", "mono_account_save_failed", "Could not save Mono account", "")
 			return
 		}
 		s.logMonoInfo(logName+".response_returned",
 			slog.Int("status", http.StatusOK),
 			slog.String("mono_account_id", acct.ID),
 		)
-		writeAPISuccess(w, http.StatusOK, resp)
+		writeAPISuccess(w, http.StatusOK, map[string]bool{"linked": true})
 		return
 	}
 
@@ -358,7 +384,7 @@ func (s *Server) listMonoAccounts(w http.ResponseWriter, r *http.Request) {
 	accounts, err := s.app.MonoRepo.ListAccounts(r.Context(), cur.ID)
 	if err != nil {
 		s.logMonoError("mono.accounts.list_failed", err, slog.String("user_id", cur.ID))
-		writeAPIStepError(w, http.StatusInternalServerError, "fetch_accounts", "mono_accounts_list_failed", "Could not list Mono accounts", err.Error())
+		writeAPIStepError(w, http.StatusInternalServerError, "fetch_accounts", "mono_accounts_list_failed", "Could not list Mono accounts", "")
 		return
 	}
 	s.logMonoInfo("mono.accounts.list",
@@ -397,7 +423,7 @@ func (s *Server) getMonoAccountTransactions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if acc.UserID != cur.ID {
-		writeAPIError(w, 403, "account_forbidden", "Account belongs to another user", "")
+		writeAPIError(w, 404, "account_not_found", "Account was not found", "")
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -417,10 +443,10 @@ func (s *Server) getMonoAccountTransactions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if readiness.Meta.DataStatus == "UNAVAILABLE" || (readiness.Meta.DataStatus == "PARTIAL" && !monoapp.TransactionsAvailable(acc.Metadata)) {
-		writeAPISuccess(w, 202, map[string]any{"status": "unavailable", "dataStatus": readiness.Meta.DataStatus, "transactions": []any{}})
+		writeAPISuccess(w, 200, []any{})
 		return
 	}
-	if !monoapp.TransactionsAvailable(acc.Metadata) || acc.LastSyncedAt == nil || (acc.LastEventAt != nil && acc.LastSyncedAt.Before(*acc.LastEventAt)) {
+	if acc.LastSyncedAt == nil {
 		writeAPISuccess(w, http.StatusAccepted, map[string]any{"status": "syncing", "transactions": []any{}})
 		return
 	}

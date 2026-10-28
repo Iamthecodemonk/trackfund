@@ -153,7 +153,7 @@ func TestProfileHTTPReadsUpdatesAndValidates(t *testing.T) {
 	if readProfile(t, rr).FullName != "Original bob" {
 		t.Fatal("updated another user")
 	}
-	for _, bad := range []string{`{"id":"bob","fullName":"Attack"}`, `{"role":"SUPER_ADMIN"}`, `{"fullName":null}`, `{"phoneNumber":"08012345678"}`, `{"photoUrl":"http://example.com/image.jpg"}`} {
+	for _, bad := range []string{`{"id":"bob","fullName":"Attack"}`, `{"role":"SUPER_ADMIN"}`, `{"fullName":null}`, `{"phoneNumber":"08012"}`, `{"photoUrl":"http://example.com/image.jpg"}`} {
 		rr := profileRequest(s, "PATCH", "/api/profile/me", bad, token)
 		if rr.Code != 422 || !strings.Contains(rr.Body.String(), "errors") {
 			t.Fatalf("validation: %d", rr.Code)

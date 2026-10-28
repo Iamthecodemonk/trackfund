@@ -123,8 +123,8 @@ func ParseChanges(body map[string]json.RawMessage) (Changes, error) {
 				break
 			}
 			value = strings.NewReplacer(" ", "", "-", "", "(", "", ")", "", ".", "").Replace(value)
-			if !regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`).MatchString(value) {
-				fields[name] = "Include the country code, for example +2348012345678"
+			if !regexp.MustCompile(`^(\+[1-9][0-9]{6,14}|0[0-9]{9,10})$`).MatchString(value) {
+				fields[name] = "Use a local phone number or include the country code, for example +2348012345678"
 			}
 		case "photoUrl":
 			u, err := url.Parse(value)
