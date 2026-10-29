@@ -154,6 +154,19 @@ func TestMonoSessionUsesAuthenticatedCustomerAndPersistsReference(t *testing.T) 
 		t.Fatal("storage failure was unsafe")
 	}
 	store.err = nil
+	// A stale deployment must reject a malformed default/allow-list entry before
+	// saving a reference or opening a provider session.
+	app.Config.MonoCallbackURL = "https://trackfund//mono/callback"
+	app.Config.MonoAllowedRedirectURLs = append(app.Config.MonoAllowedRedirectURLs, app.Config.MonoCallbackURL)
+	before = calls
+	beforeRecords := len(store.records)
+	for _, body := range []string{"{}", `{"redirect_url":"https://trackfund//mono/callback"}`} {
+		rr = request(body, token)
+		if rr.Code != 422 || calls != before || len(store.records) != beforeRecords {
+			t.Fatal("malformed configured callback created a provider session")
+		}
+	}
+	app.Config.MonoCallbackURL = ""
 	providerStatus = 401
 	providerBody = `{"message":"provider-secret private details"}`
 	rr = request("{}", token)

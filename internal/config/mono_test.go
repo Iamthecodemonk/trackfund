@@ -43,12 +43,37 @@ func TestMonoConfigurationValidation(t *testing.T) {
 		{"API credentials", func(c *Config) { c.MonoBaseURL = "https://name:password@api.withmono.com/v2" }, "MONO_BASE_URL"},
 		{"timeout bounds", func(c *Config) { c.MonoTimeoutSecs = 121 }, "MONO_TIMEOUT_SECONDS"},
 		{"callback injection", func(c *Config) { c.MonoCallbackURL = "javascript:alert(1)" }, "callbacks"},
+		{"malformed mobile callback", func(c *Config) { c.MonoCallbackURL = "https://trackfund//mono/callback" }, "callbacks"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := base
 			tt.modify(&c)
 			if err := c.Validate(); err == nil || !strings.Contains(err.Error(), tt.field) {
 				t.Fatalf("expected %s validation, got %v", tt.field, err)
+			}
+		})
+	}
+}
+
+func TestMonoMalformedWebCallbacksRejectedEvenWhenConfigured(t *testing.T) {
+	for _, raw := range []string{
+		"https://trackfund//mono/callback",
+		"https://trackfund/mono/callback",
+		"https://thetrackiq.co//mono/callback",
+		"https://thetrackiq.co/%2Fmono/callback",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			for _, c := range []Config{
+				{MonoCallbackURL: raw},
+				{MonoWebRedirectURL: raw},
+				{MonoAllowedRedirectURLs: []string{raw}},
+			} {
+				if c.AllowsMonoRedirect(raw) {
+					t.Fatal("malformed configured callback accepted")
+				}
+				if err := c.validateMono(); err == nil {
+					t.Fatal("malformed configured callback did not fail startup")
+				}
 			}
 		})
 	}

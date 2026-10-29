@@ -95,3 +95,32 @@ Use a fresh test user and bearer token; never paste tokens into logs or chat.
 6. Replay a signed provider notification through Mono's dashboard; removal persists.
 7. Confirm /openapi.json and /api.json include avatar and DELETE contracts and
    the exact TrackIQ mobile callback. Save the healthy PM2 process list.
+
+## Webview stuck after linking
+
+`net::ERR_NAME_NOT_RESOLVED` at
+`https://trackfund//mono/callback?status=linked&reason=account_linked` means the
+webview attempted a website navigation to host `trackfund`. Account creation via
+the webhook is independent of that failed return; do not reconnect an account
+just because this page failed.
+
+Remove that malformed base URL from all deployed Mono callback settings and
+allow-list entries. The API now rejects it during startup and session creation,
+including when explicitly allow-listed. Keep the separate web/mobile settings
+from [mono-frontend-flow.md](mono-frontend-flow.md#configuration-and-deployment),
+rebuild/restart the API with its refreshed environment, and create a fresh hosted
+session explicitly using `trackiq://mono/callback` from mobile. Existing Mono
+hosted links retain their original callback and must not be reused for this check.
+
+Confirm the session response's `data.redirect_url` before opening `data.mono_url`.
+If it differs from the explicit mobile request, verify the app's actual API host
+and the binary/environment serving that request. This repository returns the
+validated request URL unchanged.
+
+The mobile navigation delegate must prevent loading the callback, close the
+webview, and poll the saved session reference to refresh accounts. Match the
+callback's scheme/host/path while permitting provider-added query parameters.
+Registering a deep link or changing server configuration alone does not implement
+that delegate. Follow the
+[mobile return contract](mono-frontend-flow.md#mobile-webview-return-handling)
+and test automatic close, manual close, and delayed webhooks on a device.

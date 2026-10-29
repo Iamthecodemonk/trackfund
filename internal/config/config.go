@@ -194,7 +194,10 @@ func ValidMonoRedirect(raw string) bool {
 	if raw == "trackiq://mono/callback" {
 		return true
 	}
-	return u.Scheme == "https" && u.Hostname() != "" && u.Hostname() != "localhost" && !strings.ContainsAny(raw, "\r\n")
+	// Web callbacks need a qualified host. A mobile scheme accidentally prefixed
+	// with HTTPS (https://trackfund//mono/callback) must not pass the allow-list.
+	return u.Scheme == "https" && strings.Contains(u.Hostname(), ".") &&
+		!strings.Contains(u.Path, "//") && !strings.ContainsAny(raw, "\r\n")
 }
 
 func (c Config) AllowsMonoRedirect(raw string) bool {
@@ -217,11 +220,11 @@ func (c Config) validateMono() error {
 		return fmt.Errorf("MONO_MOBILE_REDIRECT_URL must be trackiq://mono/callback")
 	}
 	if c.MonoWebRedirectURL != "" && (!ValidMonoRedirect(c.MonoWebRedirectURL) || !strings.HasPrefix(c.MonoWebRedirectURL, "https://")) {
-		return fmt.Errorf("MONO_WEB_REDIRECT_URL must be an HTTPS frontend callback without query/fragment")
+		return fmt.Errorf("MONO_WEB_REDIRECT_URL must be an HTTPS frontend callback with a qualified hostname, no doubled path separators and no query/fragment")
 	}
 	for _, callback := range append(append([]string{}, c.MonoAllowedRedirectURLs...), c.MonoCallbackURL, c.MonoMobileRedirectURL, c.MonoWebRedirectURL) {
 		if callback != "" && !ValidMonoRedirect(callback) {
-			return fmt.Errorf("Mono callbacks must be HTTPS URLs without query/fragment or trackiq://mono/callback")
+			return fmt.Errorf("Mono callbacks must be HTTPS URLs with a qualified hostname, no doubled path separators and no query/fragment, or trackiq://mono/callback")
 		}
 	}
 	if c.MonoSecretKey == "" {
