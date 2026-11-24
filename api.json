@@ -1335,23 +1335,42 @@
         ]
       }
     },
-    "/api/goals": {
-      "get": { "summary": "List the authenticated user's goals", "responses": { "200": { "description": "In-app goals; an empty array is returned for a new user" }, "401": { "description": "Authentication required" } }, "security": [ { "bearerAuth": [] } ] },
-      "post": { "summary": "Create a financial goal", "description": "Requires title, positive targetAmount (integer minor units), and currency. currentAmount and targetDate are optional.", "responses": { "201": { "description": "Goal created" }, "400": { "description": "Invalid goal" }, "401": { "description": "Authentication required" } }, "security": [ { "bearerAuth": [] } ] }
+    "/goals": {
+      "get": { "summary": "List the authenticated user's goals", "description": "Owner-scoped, paginated collection. Returns data.goals and data.pagination; a new user receives an empty array.", "parameters": [ { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 } }, { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } } ], "responses": { "200": { "description": "Goals with name, targetIcon, target/current/remaining amounts, currency, status and nullable targetDate" }, "401": { "description": "Authentication required" } }, "security": [ { "bearerAuth": [] } ] },
+      "post": { "summary": "Create a financial goal", "description": "Requires name, positive targetAmount (integer minor units), and currency. targetIcon, currentAmount and targetDate are optional.", "responses": { "201": { "description": "Canonical goal record" }, "400": { "description": "Invalid goal" }, "401": { "description": "Authentication required" } }, "security": [ { "bearerAuth": [] } ] }
     },
-    "/api/goals/{id}": {
+    "/goals/{id}": {
       "get": { "summary": "Get one goal", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "200": { "description": "Goal" }, "404": { "description": "Goal not found" } }, "security": [ { "bearerAuth": [] } ] },
-      "patch": { "summary": "Update a goal or its progress", "description": "Supports title, targetAmount, currentAmount, currency, targetDate, or clearTargetDate. Completing a goal creates an in-app notification.", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "200": { "description": "Updated goal" }, "404": { "description": "Goal not found" } }, "security": [ { "bearerAuth": [] } ] },
+      "patch": { "summary": "Update a goal or its progress", "description": "Supports name, targetIcon, targetAmount, currentAmount, currency, targetDate, or clearTargetDate. Completing a goal creates an in-app notification.", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "200": { "description": "Updated goal" }, "404": { "description": "Goal not found" } }, "security": [ { "bearerAuth": [] } ] },
       "delete": { "summary": "Delete a goal", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "204": { "description": "Deleted" }, "404": { "description": "Goal not found" } }, "security": [ { "bearerAuth": [] } ] }
     },
     "/api/notifications": {
-      "get": { "summary": "List in-app notifications", "parameters": [ { "name": "unreadOnly", "in": "query", "schema": { "type": "boolean", "default": false } } ], "responses": { "200": { "description": "Owner-scoped notifications" }, "401": { "description": "Authentication required" } }, "security": [ { "bearerAuth": [] } ] }
+      "get": { "summary": "List in-app notifications", "description": "Returns data.notifications, data.pagination and totalUnread for every notification owned by the user, independent of the requested page.", "parameters": [ { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 } }, { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 } }, { "name": "unreadOnly", "in": "query", "schema": { "type": "boolean", "default": false } } ], "responses": { "200": { "description": "Owner-scoped notification page" }, "401": { "description": "Authentication required" } }, "security": [ { "bearerAuth": [] } ] }
     },
-    "/api/notifications/{id}/read": {
-      "patch": { "summary": "Mark one notification read", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "200": { "description": "Updated notification" }, "404": { "description": "Notification not found" } }, "security": [ { "bearerAuth": [] } ] }
+    "/api/notifications/{id}": {
+      "patch": { "summary": "Set one notification read state", "description": "Accepts { read: true|false }. Repeating the same state is idempotent.", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "200": { "description": "Updated notification" }, "404": { "description": "Notification not found" } }, "security": [ { "bearerAuth": [] } ] }
     },
     "/api/notifications/read-all": {
       "post": { "summary": "Mark all of the user's notifications read", "responses": { "200": { "description": "Returns the number updated" } }, "security": [ { "bearerAuth": [] } ] }
+    },
+    "/api/transactions/{id}": {
+      "patch": {
+        "summary": "Update user-owned transaction metadata",
+        "description": "id is the stable internal transaction identifier returned as id. transactionId is Mono's stable provider identifier. This route only changes category, categoryId, userDescription and personalNote; an empty string clears an optional value. Provider amount, currency, paidAt, originalDescription and identifiers are immutable.",
+        "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "requestBody": { "required": true, "description": "JSON object containing one or more of category, categoryId, userDescription, or personalNote." },
+        "responses": { "200": { "description": "Canonical transaction with provider and user fields" }, "400": { "description": "Invalid metadata" }, "401": { "description": "Authentication required" }, "404": { "description": "Transaction missing, removed, or owned by another user" } },
+        "security": [ { "bearerAuth": [] } ]
+      }
+    },
+    "/api/transactions": {
+      "get": {
+        "summary": "List the authenticated user's imported bank transactions",
+        "description": "Stable descending paidAt/id ordering. Optional RFC3339 from (inclusive) and to (exclusive) filters. The coverage object explicitly reports complete=false because provider historical coverage is not guaranteed yet.",
+        "parameters": [ { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 } }, { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 } }, { "name": "from", "in": "query", "schema": { "type": "string", "format": "date-time" } }, { "name": "to", "in": "query", "schema": { "type": "string", "format": "date-time" } } ],
+        "responses": { "200": { "description": "Transactions, pagination and coverage metadata" }, "400": { "description": "Invalid pagination or date range" }, "401": { "description": "Authentication required" } },
+        "security": [ { "bearerAuth": [] } ]
+      }
     },
     "/funds": {
       "get": {
@@ -1806,6 +1825,20 @@
             "nullable": true,
             "description": "Latest balance reported by Mono, in integer minor units (for NGN, 500000 means ₦5,000.00). Null when Mono has not made balance data available for this account."
           },
+          "lastSyncedAt": {
+            "type": "string", "format": "date-time", "nullable": true,
+            "description": "Most recent successful transaction import."
+          },
+          "balanceObservedAt": {
+            "type": "string", "format": "date-time", "nullable": true,
+            "description": "Timestamp of the latest provider account event used for balance observation."
+          },
+          "dataStatus": { "type": "string", "description": "Provider data state, for example AVAILABLE, PROCESSING, FAILED or DISCONNECTED." },
+          "syncStatus": { "type": "string", "enum": ["syncing", "ready", "failed", "unavailable"] },
+          "initialImportReady": { "type": "boolean" },
+          "connectionStatus": { "type": "string", "enum": ["connected", "reconnection_required", "failed"] },
+          "failureReason": { "type": "string", "nullable": true },
+          "historicalCoverage": { "type": "string", "enum": ["unknown"] },
           "bankName": {
             "type": "string",
             "description": "Provider institution name, bank-code mapping, or Linked bank when unknown",

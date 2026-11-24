@@ -93,12 +93,19 @@ type MonoAccount struct {
 	Currency      string  `json:"currency"`
 	// Balance is Mono's latest reported account balance in integer minor units.
 	// It is nil until Mono confirms balance data for this connection.
-	Balance      *int64          `json:"balance"`
-	Metadata     json.RawMessage `json:"-"`
-	CreatedAt    time.Time       `json:"createdAt"`
-	UpdatedAt    time.Time       `json:"updatedAt"`
-	LastSyncedAt *time.Time      `json:"lastSyncedAt"`
-	LastEventAt  *time.Time      `json:"-"`
+	Balance            *int64          `json:"balance"`
+	Metadata           json.RawMessage `json:"-"`
+	CreatedAt          time.Time       `json:"createdAt"`
+	UpdatedAt          time.Time       `json:"updatedAt"`
+	LastSyncedAt       *time.Time      `json:"lastSyncedAt"`
+	LastEventAt        *time.Time      `json:"-"`
+	BalanceObservedAt  *time.Time      `json:"balanceObservedAt"`
+	DataStatus         string          `json:"dataStatus"`
+	SyncStatus         string          `json:"syncStatus"`
+	InitialImportReady bool            `json:"initialImportReady"`
+	ConnectionStatus   string          `json:"connectionStatus"`
+	FailureReason      *string         `json:"failureReason,omitempty"`
+	HistoricalCoverage string          `json:"historicalCoverage"`
 }
 
 func (r *MonoRepository) ListAccounts(ctx context.Context, userID string) ([]MonoAccount, error) {
@@ -115,6 +122,7 @@ func (r *MonoRepository) ListAccounts(ctx context.Context, userID string) ([]Mon
 		}
 		a.applyBranding()
 		a.applyBalance()
+		a.applySyncStatus()
 		out = append(out, a)
 	}
 	return out, rows.Err()
@@ -131,6 +139,7 @@ func (r *MonoRepository) GetAccountByID(ctx context.Context, id string) (MonoAcc
 	}
 	a.applyBranding()
 	a.applyBalance()
+	a.applySyncStatus()
 	return a, true, nil
 }
 
@@ -149,6 +158,7 @@ func (r *MonoRepository) ListAllAccounts(ctx context.Context) ([]MonoAccount, er
 		}
 		a.applyBranding()
 		a.applyBalance()
+		a.applySyncStatus()
 		out = append(out, a)
 	}
 	return out, rows.Err()
@@ -175,6 +185,48 @@ func (a *MonoAccount) applyBalance() {
 	}
 }
 
+func (a *MonoAccount) applySyncStatus() {
+	var snapshot struct {
+		Meta struct {
+			DataStatus string `json:"data_status"`
+		} `json:"meta"`
+	}
+	_ = json.Unmarshal(a.Metadata, &snapshot)
+	a.DataStatus = strings.ToUpper(strings.TrimSpace(snapshot.Meta.DataStatus))
+	if a.DataStatus == "" {
+		a.DataStatus = "PROCESSING"
+	}
+	a.HistoricalCoverage = "unknown"
+	if a.LastEventAt != nil {
+		observed := a.LastEventAt.UTC()
+		a.BalanceObservedAt = &observed
+	}
+	a.ConnectionStatus = "connected"
+	a.SyncStatus = "syncing"
+	switch a.DataStatus {
+	case "FAILED":
+		a.ConnectionStatus = "failed"
+		a.SyncStatus = "failed"
+		reason := "provider_data_failed"
+		a.FailureReason = &reason
+	case "DISCONNECTED":
+		a.ConnectionStatus = "reconnection_required"
+		a.SyncStatus = "unavailable"
+		reason := "provider_disconnected"
+		a.FailureReason = &reason
+	case "UNAVAILABLE":
+		a.SyncStatus = "unavailable"
+	default:
+		if a.LastSyncedAt != nil {
+			a.InitialImportReady = true
+			a.SyncStatus = "ready"
+		}
+		if a.LastSyncedAt != nil && a.LastEventAt != nil && a.LastSyncedAt.Before(*a.LastEventAt) {
+			a.SyncStatus = "syncing"
+		}
+	}
+}
+
 func parseIntegerBalance(raw json.RawMessage) (int64, bool) {
 	value := strings.TrimSpace(string(raw))
 	if value == "" || value == "null" {
@@ -190,19 +242,29 @@ func parseIntegerBalance(raw json.RawMessage) (int64, bool) {
 }
 
 type MonoTransaction struct {
-	ID            string          `json:"id"`
-	MonoAccountID string          `json:"monoAccountId"`
-	TransactionID string          `json:"transactionId"`
-	Amount        int64           `json:"amount"`
-	Currency      string          `json:"currency"`
-	PaidAt        time.Time       `json:"paidAt"`
-	Description   string          `json:"description"`
-	Raw           json.RawMessage `json:"raw,omitempty"`
-	CreatedAt     time.Time       `json:"createdAt"`
+	ID                   string          `json:"id"`
+	MonoAccountID        string          `json:"monoAccountId"`
+	TransactionID        string          `json:"transactionId"`
+	Amount               int64           `json:"amount"`
+	Currency             string          `json:"currency"`
+	PaidAt               time.Time       `json:"paidAt"`
+	Description          string          `json:"description"`
+	OriginalDescription  string          `json:"originalDescription"`
+	UserDescription      *string         `json:"userDescription,omitempty"`
+	PersonalNote         *string         `json:"personalNote,omitempty"`
+	Category             *string         `json:"category,omitempty"`
+	CategoryID           *string         `json:"categoryId,omitempty"`
+	Source               string          `json:"source"`
+	Direction            string          `json:"direction"`
+	TransferGroupID      *string         `json:"transferGroupId,omitempty"`
+	CountsTowardSpending bool            `json:"countsTowardSpending"`
+	CountsTowardIncome   bool            `json:"countsTowardIncome"`
+	Raw                  json.RawMessage `json:"raw,omitempty"`
+	CreatedAt            time.Time       `json:"createdAt"`
 }
 
 func (r *MonoRepository) ListTransactionsByAccountID(ctx context.Context, internalAccountID string) ([]MonoTransaction, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id, mono_account_id, transaction_id, amount, currency, paid_at, description, raw, created_at FROM mono_transactions WHERE mono_account_id = $1 AND EXISTS(SELECT 1 FROM mono_accounts WHERE id=$1 AND deleted_at IS NULL) ORDER BY paid_at DESC`, internalAccountID)
+	rows, err := r.pool.Query(ctx, `SELECT id, mono_account_id, transaction_id, amount, currency, paid_at, COALESCE(description,''), raw, created_at,category,category_id,user_description,personal_note,transfer_group_id,counts_toward_spending,counts_toward_income FROM mono_transactions WHERE mono_account_id = $1 AND EXISTS(SELECT 1 FROM mono_accounts WHERE id=$1 AND deleted_at IS NULL) ORDER BY paid_at DESC,id DESC`, internalAccountID)
 	if err != nil {
 		return nil, err
 	}
@@ -210,17 +272,109 @@ func (r *MonoRepository) ListTransactionsByAccountID(ctx context.Context, intern
 	out := []MonoTransaction{}
 	for rows.Next() {
 		var t MonoTransaction
-		if err := rows.Scan(&t.ID, &t.MonoAccountID, &t.TransactionID, &t.Amount, &t.Currency, &t.PaidAt, &t.Description, &t.Raw, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.MonoAccountID, &t.TransactionID, &t.Amount, &t.Currency, &t.PaidAt, &t.OriginalDescription, &t.Raw, &t.CreatedAt, &t.Category, &t.CategoryID, &t.UserDescription, &t.PersonalNote, &t.TransferGroupID, &t.CountsTowardSpending, &t.CountsTowardIncome); err != nil {
 			return nil, err
 		}
-		var signErr error
-		t.Amount, signErr = monoapp.SignedAmount(t.Amount, transactionDirection(t.Raw))
-		if signErr != nil {
-			return nil, signErr
+		if err := presentTransaction(&t); err != nil {
+			return nil, err
 		}
-		t.PaidAt = t.PaidAt.UTC()
 		t.Raw = nil
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+type TransactionHistoryPage struct {
+	Transactions []MonoTransaction   `json:"transactions"`
+	Pagination   Page                `json:"pagination"`
+	Coverage     TransactionCoverage `json:"coverage"`
+}
+type TransactionCoverage struct {
+	From     *time.Time `json:"from,omitempty"`
+	To       *time.Time `json:"to,omitempty"`
+	Complete bool       `json:"complete"`
+	Note     string     `json:"note"`
+}
+
+func (r *MonoRepository) ListTransactions(ctx context.Context, userID string, from, to *time.Time, limit, offset, page int) (TransactionHistoryPage, error) {
+	var total int
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM mono_transactions t JOIN mono_accounts a ON a.id=t.mono_account_id WHERE a.user_id=$1 AND a.deleted_at IS NULL AND ($2::timestamptz IS NULL OR t.paid_at >= $2) AND ($3::timestamptz IS NULL OR t.paid_at < $3)`, userID, from, to).Scan(&total); err != nil {
+		return TransactionHistoryPage{}, err
+	}
+	rows, err := r.pool.Query(ctx, `SELECT t.id,t.mono_account_id,t.transaction_id,t.amount,t.currency,t.paid_at,COALESCE(t.description,''),t.raw,t.created_at,t.category,t.category_id,t.user_description,t.personal_note,t.transfer_group_id,t.counts_toward_spending,t.counts_toward_income FROM mono_transactions t JOIN mono_accounts a ON a.id=t.mono_account_id WHERE a.user_id=$1 AND a.deleted_at IS NULL AND ($2::timestamptz IS NULL OR t.paid_at >= $2) AND ($3::timestamptz IS NULL OR t.paid_at < $3) ORDER BY t.paid_at DESC,t.id DESC LIMIT $4 OFFSET $5`, userID, from, to, limit, offset)
+	if err != nil {
+		return TransactionHistoryPage{}, err
+	}
+	defer rows.Close()
+	items := []MonoTransaction{}
+	for rows.Next() {
+		var t MonoTransaction
+		if err := rows.Scan(&t.ID, &t.MonoAccountID, &t.TransactionID, &t.Amount, &t.Currency, &t.PaidAt, &t.OriginalDescription, &t.Raw, &t.CreatedAt, &t.Category, &t.CategoryID, &t.UserDescription, &t.PersonalNote, &t.TransferGroupID, &t.CountsTowardSpending, &t.CountsTowardIncome); err != nil {
+			return TransactionHistoryPage{}, err
+		}
+		if err := presentTransaction(&t); err != nil {
+			return TransactionHistoryPage{}, err
+		}
+		t.Raw = nil
+		items = append(items, t)
+	}
+	if err := rows.Err(); err != nil {
+		return TransactionHistoryPage{}, err
+	}
+	return TransactionHistoryPage{Transactions: items, Pagination: Page{Page: page, Limit: limit, Total: total, HasMore: page*limit < total}, Coverage: TransactionCoverage{From: from, To: to, Complete: false, Note: "Provider history coverage is not yet guaranteed; this is a stable page of imported transactions."}}, nil
+}
+
+func presentTransaction(t *MonoTransaction) error {
+	direction := strings.ToLower(transactionDirection(t.Raw))
+	amount, err := monoapp.SignedAmount(t.Amount, direction)
+	if err != nil {
+		return err
+	}
+	t.Amount = amount
+	t.PaidAt = t.PaidAt.UTC()
+	t.Description = t.OriginalDescription
+	if t.UserDescription != nil {
+		t.Description = *t.UserDescription
+	}
+	t.Source = "bank"
+	t.Direction = direction
+	if t.Direction == "" {
+		if t.Amount < 0 {
+			t.Direction = "debit"
+		} else if t.Amount > 0 {
+			t.Direction = "credit"
+		} else {
+			t.Direction = "unknown"
+		}
+	}
+	return nil
+}
+
+type TransactionUserMetadata struct{ Category, CategoryID, UserDescription, PersonalNote *string }
+
+func (r *MonoRepository) UpdateTransactionMetadata(ctx context.Context, userID, transactionID string, in TransactionUserMetadata) (MonoTransaction, error) {
+	var accountID string
+	err := r.pool.QueryRow(ctx, `UPDATE mono_transactions t SET category=CASE WHEN $3 THEN NULLIF($4,'') ELSE t.category END,category_id=CASE WHEN $5 THEN NULLIF($6,'') ELSE t.category_id END,user_description=CASE WHEN $7 THEN NULLIF($8,'') ELSE t.user_description END,personal_note=CASE WHEN $9 THEN NULLIF($10,'') ELSE t.personal_note END FROM mono_accounts a WHERE t.id=$1 AND a.id=t.mono_account_id AND a.user_id=$2 AND a.deleted_at IS NULL RETURNING t.mono_account_id`, transactionID, userID, in.Category != nil, stringValue(in.Category), in.CategoryID != nil, stringValue(in.CategoryID), in.UserDescription != nil, stringValue(in.UserDescription), in.PersonalNote != nil, stringValue(in.PersonalNote)).Scan(&accountID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return MonoTransaction{}, pgx.ErrNoRows
+	}
+	if err != nil {
+		return MonoTransaction{}, err
+	}
+	items, err := r.ListTransactionsByAccountID(ctx, accountID)
+	if err != nil {
+		return MonoTransaction{}, err
+	}
+	for _, item := range items {
+		if item.ID == transactionID {
+			return item, nil
+		}
+	}
+	return MonoTransaction{}, pgx.ErrNoRows
+}
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

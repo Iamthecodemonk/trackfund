@@ -1,6 +1,6 @@
 # TrackIQ Mono/Profile operational contract
 
-Startup runs additive migrations through 008. Back up PostgreSQL before deployment; no
+Startup runs additive migrations through 010. Back up PostgreSQL before deployment; no
 existing account/transaction rows are removed by this migration.
 
 ## Account removal
@@ -77,17 +77,45 @@ expenses, so the client must not add unlike currencies together.
 
 ## Goals and notifications
 
-Goals are separate from funds. `POST`, `GET`, `PATCH` and `DELETE /api/goals`
+Goals are separate from funds. `POST`, `GET`, `PATCH` and `DELETE /goals`
 store owner-scoped financial targets with positive integer minor-unit
-`targetAmount`, non-negative `currentAmount`, currency and an optional
-`targetDate`. Updating current progress to the target creates one durable,
-in-app `goal_completed` notification. The maintenance process also creates a
-deduplicated `goal_due` notification for active goals due within three days.
+`targetAmount`, non-negative `currentAmount`, currency, optional `targetIcon`
+and an optional `targetDate`. `GET /goals?page=1&limit=20` returns a successful
+paginated collection; a new user gets an empty goals array. Updating current
+progress to the target creates one durable, in-app `goal_completed`
+notification. The maintenance process also creates a deduplicated `goal_due`
+notification for active goals due within three days.
 
-Use `GET /api/notifications?unreadOnly=true`, `PATCH
-/api/notifications/{id}/read`, and `POST /api/notifications/read-all` to read
-and acknowledge those notifications. This API stores in-app notifications; it
-does not send mobile push notifications or email.
+Use `GET /api/notifications?page=1&limit=50&unreadOnly=true`, `PATCH
+/api/notifications/{id}` with `{"read":true|false}`, and `POST
+/api/notifications/read-all` to read and acknowledge those notifications. The
+list response includes `totalUnread` independent of the requested page. This
+API stores in-app notifications; it does not send mobile push notifications or
+email.
+
+## Bank transaction metadata
+
+Bank-transaction `id` is the stable internal identifier for mutation; its
+`transactionId` is Mono's stable provider identifier. `PATCH
+/api/transactions/{id}` is owner-scoped and only accepts `category`,
+`categoryId`, `userDescription`, and `personalNote`. An empty string clears one
+of those optional fields. Amount, currency, `paidAt`, provider description and
+both identifiers are immutable through this route. Transaction reads retain
+`originalDescription` separately from the effective `description` and user
+description, so provider imports cannot overwrite user annotations.
+
+`GET /api/transactions?page=1&limit=50&from=<RFC3339>&to=<RFC3339>` returns
+the authenticated user's imported bank transactions in stable `paidAt` then
+internal-ID descending order. `from` is inclusive and `to` exclusive. Its
+`coverage.complete` is currently false: pagination is reliable for imported
+rows, but Mono historical coverage is not yet guaranteed and must not be
+treated as a complete reporting period.
+
+Each account response includes `lastSyncedAt`, `balanceObservedAt`,
+`dataStatus`, `syncStatus`, `initialImportReady`, `connectionStatus`, optional
+`failureReason`, and `historicalCoverage`. Clients must use these fields rather
+than interpreting an empty transaction collection as a completed import. Current
+provider history coverage is explicitly `unknown`.
 
 Session progression: pending -> connected -> syncing -> available. connected means
 the account row is committed; syncing means provider transactions are ready to

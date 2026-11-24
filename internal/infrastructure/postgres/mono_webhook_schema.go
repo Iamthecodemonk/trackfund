@@ -13,6 +13,13 @@ CREATE TABLE IF NOT EXISTS mono_transactions (
  paid_at TIMESTAMPTZ NOT NULL,description TEXT,raw JSONB,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS mono_transactions_account_idx ON mono_transactions(mono_account_id);
+ALTER TABLE mono_transactions ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE mono_transactions ADD COLUMN IF NOT EXISTS category_id TEXT;
+ALTER TABLE mono_transactions ADD COLUMN IF NOT EXISTS user_description TEXT;
+ALTER TABLE mono_transactions ADD COLUMN IF NOT EXISTS personal_note TEXT;
+ALTER TABLE mono_transactions ADD COLUMN IF NOT EXISTS transfer_group_id TEXT;
+ALTER TABLE mono_transactions ADD COLUMN IF NOT EXISTS counts_toward_spending BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE mono_transactions ADD COLUMN IF NOT EXISTS counts_toward_income BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE mono_accounts ADD COLUMN IF NOT EXISTS last_event_at TIMESTAMPTZ;
 ALTER TABLE mono_accounts ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ;
 ALTER TABLE mono_link_sessions ADD COLUMN IF NOT EXISTS mono_account_id TEXT REFERENCES mono_accounts(mono_account_id);
