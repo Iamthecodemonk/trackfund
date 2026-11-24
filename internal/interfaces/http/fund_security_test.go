@@ -41,13 +41,13 @@ func TestFundHTTPAuthenticationAndOwnership(t *testing.T) {
 		return rr
 	}
 	for _, token := range []string{"", "invalid", tokens["alice"] + "tampered"} {
-		for _, route := range []struct{ method, path string }{{"POST", "/funds"}, {"GET", "/funds/anything"}, {"POST", "/funds/anything/contributions"}} {
+		for _, route := range []struct{ method, path string }{{"POST", "/funds"}, {"GET", "/funds"}, {"GET", "/funds/anything"}, {"POST", "/funds/anything/contributions"}} {
 			if rr := request(route.method, route.path, "{}", token); rr.Code != 401 {
 				t.Fatalf("%s %s: %d", route.method, route.path, rr.Code)
 			}
 		}
 	}
-	rr := request("POST", "/funds", `{"name":"Rent","targetAmount":100,"currency":"NGN","userId":"bob","ownerId":"bob","UserID":"bob"}`, tokens["alice"])
+	rr := request("POST", "/funds", `{"name":"Rent","targetAmount":100,"currency":"NGN","targetIcon":"home","userId":"bob","ownerId":"bob","UserID":"bob"}`, tokens["alice"])
 	if rr.Code != 201 {
 		t.Fatalf("create: %d %s", rr.Code, rr.Body.String())
 	}
@@ -68,6 +68,15 @@ func TestFundHTTPAuthenticationAndOwnership(t *testing.T) {
 	}
 	if rr.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("fund response can be cached")
+	}
+	if rr := request("GET", "/funds?page=1&limit=20", "", tokens["bob"]); rr.Code != 200 || !strings.Contains(rr.Body.String(), `"funds":[]`) {
+		t.Fatalf("empty owner-scoped collection: %d %s", rr.Code, rr.Body.String())
+	}
+	if rr := request("GET", "/funds?page=1&limit=20", "", tokens["alice"]); rr.Code != 200 || !strings.Contains(rr.Body.String(), `"targetIcon":"home"`) || !strings.Contains(rr.Body.String(), `"total":1`) {
+		t.Fatalf("owner-scoped collection: %d %s", rr.Code, rr.Body.String())
+	}
+	if rr := request("GET", "/funds?page=0", "", tokens["alice"]); rr.Code != 400 {
+		t.Fatalf("invalid collection page: %d", rr.Code)
 	}
 	var before struct{ TotalContributions int64 }
 	json.Unmarshal(rr.Body.Bytes(), &before)

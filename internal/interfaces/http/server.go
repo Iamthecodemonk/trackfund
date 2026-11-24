@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -108,6 +109,7 @@ func (s *Server) routes() {
 			})
 		})
 		r.Post("/funds", s.createFund)
+		r.Get("/funds", s.listFunds)
 		r.Get("/funds/{id}", s.getFund)
 		r.Post("/funds/{id}/contributions", s.recordContribution)
 		// Manual records supplement bank-imported transactions; they are never sent to Mono.
@@ -121,6 +123,15 @@ func (s *Server) routes() {
 	profileRoutes.Patch("/api/profile/me", s.patchProfile)
 	profileRoutes.Post("/api/profile/me/email/verify", s.verifyProfileEmail)
 	profileRoutes.Post("/api/profile/me/avatar", s.uploadProfileAvatar)
+	goals := s.router.With(s.requireAuth)
+	goals.Post("/api/goals", s.createGoal)
+	goals.Get("/api/goals", s.listGoals)
+	goals.Get("/api/goals/{id}", s.getGoal)
+	goals.Patch("/api/goals/{id}", s.updateGoal)
+	goals.Delete("/api/goals/{id}", s.deleteGoal)
+	goals.Get("/api/notifications", s.listNotifications)
+	goals.Patch("/api/notifications/{id}/read", s.markNotificationRead)
+	goals.Post("/api/notifications/read-all", s.markAllNotificationsRead)
 	s.router.Get("/internal/metrics", s.operationalMetrics)
 	// serve OpenAPI and a simple docs page
 	s.router.Get("/openapi.json", s.serveOpenAPI)
@@ -212,6 +223,36 @@ func (s *Server) getFund(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, summary)
+}
+
+func (s *Server) listFunds(w http.ResponseWriter, r *http.Request) {
+	page, limit := 1, 20
+	var err error
+	if raw := strings.TrimSpace(r.URL.Query().Get("page")); raw != "" {
+		page, err = strconv.Atoi(raw)
+		if err != nil || page < 1 {
+			writeAPIError(w, http.StatusBadRequest, "invalid_pagination", "page must be a positive integer", "")
+			return
+		}
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 100 {
+			writeAPIError(w, http.StatusBadRequest, "invalid_pagination", "limit must be between 1 and 100", "")
+			return
+		}
+	}
+
+	result, err := s.app.Queries.ListFunds.Handle(fundsapp.ListFundsQuery{
+		UserID: currentUser(r).ID,
+		Page:   page,
+		Limit:  limit,
+	})
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "fund_list_failed", "Could not list funds", "")
+		return
+	}
+	writeAPISuccess(w, http.StatusOK, result)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

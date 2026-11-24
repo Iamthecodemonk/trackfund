@@ -56,6 +56,12 @@ func (c *FundSummaryCache) Save(summary fundsapp.FundSummary) error {
 	return c.set(context.Background(), c.key(summary.ID), summary)
 }
 
+// Lists are read directly from the durable projection. Caching individual
+// summaries must not cause a user's collection to be stale or incomplete.
+func (c *FundSummaryCache) ListByOwner(userID string, limit, offset int) ([]fundsapp.FundSummary, int, error) {
+	return c.fallback.ListByOwner(userID, limit, offset)
+}
+
 func (c *FundSummaryCache) set(ctx context.Context, key string, summary fundsapp.FundSummary) error {
 	value, err := json.Marshal(summary)
 	if err != nil {

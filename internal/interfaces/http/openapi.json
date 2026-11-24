@@ -1335,7 +1335,72 @@
         ]
       }
     },
+    "/api/goals": {
+      "get": { "summary": "List the authenticated user's goals", "responses": { "200": { "description": "In-app goals; an empty array is returned for a new user" }, "401": { "description": "Authentication required" } }, "security": [ { "bearerAuth": [] } ] },
+      "post": { "summary": "Create a financial goal", "description": "Requires title, positive targetAmount (integer minor units), and currency. currentAmount and targetDate are optional.", "responses": { "201": { "description": "Goal created" }, "400": { "description": "Invalid goal" }, "401": { "description": "Authentication required" } }, "security": [ { "bearerAuth": [] } ] }
+    },
+    "/api/goals/{id}": {
+      "get": { "summary": "Get one goal", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "200": { "description": "Goal" }, "404": { "description": "Goal not found" } }, "security": [ { "bearerAuth": [] } ] },
+      "patch": { "summary": "Update a goal or its progress", "description": "Supports title, targetAmount, currentAmount, currency, targetDate, or clearTargetDate. Completing a goal creates an in-app notification.", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "200": { "description": "Updated goal" }, "404": { "description": "Goal not found" } }, "security": [ { "bearerAuth": [] } ] },
+      "delete": { "summary": "Delete a goal", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "204": { "description": "Deleted" }, "404": { "description": "Goal not found" } }, "security": [ { "bearerAuth": [] } ] }
+    },
+    "/api/notifications": {
+      "get": { "summary": "List in-app notifications", "parameters": [ { "name": "unreadOnly", "in": "query", "schema": { "type": "boolean", "default": false } } ], "responses": { "200": { "description": "Owner-scoped notifications" }, "401": { "description": "Authentication required" } }, "security": [ { "bearerAuth": [] } ] }
+    },
+    "/api/notifications/{id}/read": {
+      "patch": { "summary": "Mark one notification read", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "200": { "description": "Updated notification" }, "404": { "description": "Notification not found" } }, "security": [ { "bearerAuth": [] } ] }
+    },
+    "/api/notifications/read-all": {
+      "post": { "summary": "Mark all of the user's notifications read", "responses": { "200": { "description": "Returns the number updated" } }, "security": [ { "bearerAuth": [] } ] }
+    },
     "/funds": {
+      "get": {
+        "summary": "List the authenticated user's funds",
+        "description": "Returns only funds owned by the bearer-token user. Amounts are integer minor units; a new user receives an empty funds array.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "default": 1 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fund collection",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "data": {
+                    "funds": [
+                      {
+                        "id": "fund_1",
+                        "name": "School Fund",
+                        "targetAmount": 100000,
+                        "currency": "NGN",
+                        "targetIcon": "education",
+                        "totalContributions": 25000,
+                        "remainingAmount": 75000,
+                        "contributionCount": 3,
+                        "createdAt": "2026-11-24T09:00:00Z"
+                      }
+                    ],
+                    "pagination": { "page": 1, "limit": 20, "total": 1, "hasMore": false }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid page or limit" },
+          "401": { "description": "Missing, invalid, expired or revoked access token" }
+        },
+        "security": [ { "bearerAuth": [] } ]
+      },
       "post": {
         "summary": "Create fund",
         "requestBody": {
@@ -1349,10 +1414,15 @@
                     "type": "string"
                   },
                   "targetAmount": {
-                    "type": "integer"
+                    "type": "integer",
+                    "description": "Target in integer minor units."
                   },
                   "currency": {
                     "type": "string"
+                  },
+                  "targetIcon": {
+                    "type": "string",
+                    "description": "Optional client-recognized semantic icon identifier."
                   }
                 },
                 "required": [
@@ -1414,9 +1484,11 @@
                   "name": "School Fund",
                   "targetAmount": 100000,
                   "currency": "USD",
+                  "targetIcon": "education",
                   "totalContributions": 25000,
                   "remainingAmount": 75000,
-                  "contributionCount": 3
+                  "contributionCount": 3,
+                  "createdAt": "2026-11-24T09:00:00Z"
                 }
               }
             }

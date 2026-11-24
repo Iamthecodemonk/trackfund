@@ -30,6 +30,7 @@ type Commands struct {
 
 type Queries struct {
 	GetFundSummary fundsapp.GetFundSummaryHandler
+	ListFunds      fundsapp.ListFundsHandler
 }
 
 type App struct {
@@ -42,6 +43,8 @@ type App struct {
 	Closer         func()
 	MonoRepo       *postgres.MonoRepository
 	ManualExpenses *postgres.ManualExpenseRepository
+	Goals          *postgres.GoalRepository
+	Notifications  *postgres.NotificationRepository
 	MonoSessions   ports.MonoSessionStore
 	MonoWebhooks   ports.MonoWebhookStore
 	MonoClient     *monoclient.Client
@@ -86,6 +89,8 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 
 	monoRepo := postgres.NewMonoRepository(db)
 	manualExpenses := postgres.NewManualExpenseRepository(db)
+	goals := postgres.NewGoalRepository(db)
+	notifications := postgres.NewNotificationRepository(db)
 	monoClient := monoclient.NewClientWithTimeout(cfg.MonoBaseURL, cfg.MonoSecretKey, cfg.MonoPublicKey, time.Duration(cfg.MonoTimeoutSecs)*time.Second)
 	monoClient.Debug = cfg.MonoDebugLogging && cfg.Env != "production"
 	// create background context and cancel
@@ -99,6 +104,8 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 	app.Config = cfg
 	app.MonoWebhooks = monoRepo
 	app.ManualExpenses = manualExpenses
+	app.Goals = goals
+	app.Notifications = notifications
 	profileRepo := postgres.NewProfileRepository(db)
 	app.Profile = profileapp.NewService(profileRepo, emailSender, cfg.JWTSecret)
 	if cfg.AvatarStorageConfigured() {
@@ -160,6 +167,7 @@ func wireApp(
 		},
 		Queries: Queries{
 			GetFundSummary: fundsapp.NewGetFundSummaryHandler(fundSummaryReadModel, eventStore),
+			ListFunds:      fundsapp.NewListFundsHandler(fundSummaryReadModel),
 		},
 		Auth: authapp.NewService(authRepo, authapp.LogEmailSender{}, authapp.Config{
 			JWTSecret:         jwtSecret,

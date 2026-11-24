@@ -17,6 +17,7 @@ type CreateFundCommand struct {
 	Name         string `json:"name"`
 	TargetAmount int64  `json:"targetAmount"`
 	Currency     string `json:"currency"`
+	TargetIcon   string `json:"targetIcon,omitempty"`
 }
 
 type CreateFundResult struct {
@@ -35,7 +36,7 @@ func (h CreateFundHandler) Handle(command CreateFundCommand) (CreateFundResult, 
 	if strings.TrimSpace(command.UserID) == "" {
 		return CreateFundResult{}, ErrFundAuthenticationRequired
 	}
-	fund, err := funds.CreateFund(command.UserID, command.Name, command.TargetAmount, command.Currency)
+	fund, err := funds.CreateFundWithIcon(command.UserID, command.Name, command.TargetAmount, command.Currency, command.TargetIcon)
 	if err != nil {
 		return CreateFundResult{}, err
 	}

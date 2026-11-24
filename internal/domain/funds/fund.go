@@ -17,12 +17,17 @@ type Fund struct {
 	name               string
 	targetAmount       int64
 	currency           string
+	targetIcon         string
 	totalContributions int64
 	version            int
 	changes            []Event
 }
 
 func CreateFund(ownerID, name string, targetAmount int64, currency string) (*Fund, error) {
+	return CreateFundWithIcon(ownerID, name, targetAmount, currency, "")
+}
+
+func CreateFundWithIcon(ownerID, name string, targetAmount int64, currency, targetIcon string) (*Fund, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
 		return nil, shared.ErrOwnerRequired
@@ -46,6 +51,7 @@ func CreateFund(ownerID, name string, targetAmount int64, currency string) (*Fun
 		Name:         name,
 		TargetAmount: targetAmount,
 		Currency:     currency,
+		TargetIcon:   strings.TrimSpace(targetIcon),
 	})
 
 	return fund, nil
@@ -109,6 +115,7 @@ func (f *Fund) apply(event Event) {
 		f.name = e.Name
 		f.targetAmount = e.TargetAmount
 		f.currency = e.Currency
+		f.targetIcon = e.TargetIcon
 	case ContributionRecorded:
 		f.totalContributions += e.Amount
 	}

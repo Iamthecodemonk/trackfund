@@ -18,6 +18,7 @@ type FundCreated struct {
 	Name         string
 	TargetAmount int64
 	Currency     string
+	TargetIcon   string
 }
 
 func (e FundCreated) Type() EventType {

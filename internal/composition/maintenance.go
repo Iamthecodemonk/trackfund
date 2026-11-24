@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"time"
+
+	authapp "trackfund/internal/application/auth"
 	"trackfund/internal/infrastructure/postgres"
 )
 
@@ -41,6 +43,11 @@ func startMaintenance(ctx context.Context, app *App, profile *postgres.ProfileRe
 				}
 			}
 		case <-monitor.C:
+			if app.Notifications != nil {
+				if err := app.Notifications.CreateDueReminders(ctx, authapp.RandomID); err != nil && ctx.Err() == nil {
+					app.Logger.Error("goal notification reminder unavailable", err)
+				}
+			}
 			counts, err := app.MonoRepo.OperationalCounts(ctx)
 			if err == nil && (counts.FailedWebhooks+counts.PendingSessions+counts.FailedUnlinks+counts.AvatarCleanupFailures) > 0 {
 				app.Logger.Info("operational backlog", slog.Int64("failed_webhooks", counts.FailedWebhooks), slog.Int64("stale_pending_sessions", counts.PendingSessions), slog.Int64("failed_unlinks", counts.FailedUnlinks), slog.Int64("avatar_cleanup_failures", counts.AvatarCleanupFailures))

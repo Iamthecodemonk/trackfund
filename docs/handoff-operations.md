@@ -1,6 +1,6 @@
 # TrackIQ Mono/Profile operational contract
 
-Startup runs additive migration 005. Back up PostgreSQL before deployment; no
+Startup runs additive migrations through 008. Back up PostgreSQL before deployment; no
 existing account/transaction rows are removed by this migration.
 
 ## Account removal
@@ -63,6 +63,31 @@ new key for a deliberate replacement.
 transactions without treating them as Mono data. `PATCH` and `DELETE
 /api/expenses/{id}` are owner-only; deleted records disappear from lists and
 subsequent edits/deletes return 404. Keep currencies separate in totals.
+
+## Funds
+
+`GET /funds?page=1&limit=20` returns only the authenticated user's savings
+targets. The successful response is wrapped in `data`, with `funds` and
+pagination metadata; a new user receives `funds: []`. Each target reports its
+integer minor-unit target, contributions and remaining amount, plus its creation
+time and optional semantic `targetIcon`. `POST /funds` accepts the optional
+`targetIcon`; it is a client-recognized identifier and does not affect money
+movement. Funds and contributions remain separate from Mono balances and manual
+expenses, so the client must not add unlike currencies together.
+
+## Goals and notifications
+
+Goals are separate from funds. `POST`, `GET`, `PATCH` and `DELETE /api/goals`
+store owner-scoped financial targets with positive integer minor-unit
+`targetAmount`, non-negative `currentAmount`, currency and an optional
+`targetDate`. Updating current progress to the target creates one durable,
+in-app `goal_completed` notification. The maintenance process also creates a
+deduplicated `goal_due` notification for active goals due within three days.
+
+Use `GET /api/notifications?unreadOnly=true`, `PATCH
+/api/notifications/{id}/read`, and `POST /api/notifications/read-all` to read
+and acknowledge those notifications. This API stores in-app notifications; it
+does not send mobile push notifications or email.
 
 Session progression: pending -> connected -> syncing -> available. connected means
 the account row is committed; syncing means provider transactions are ready to
