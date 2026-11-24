@@ -45,6 +45,7 @@ type App struct {
 	ManualExpenses *postgres.ManualExpenseRepository
 	Goals          *postgres.GoalRepository
 	Notifications  *postgres.NotificationRepository
+	Budgets        *postgres.BudgetRepository
 	MonoSessions   ports.MonoSessionStore
 	MonoWebhooks   ports.MonoWebhookStore
 	MonoClient     *monoclient.Client
@@ -91,6 +92,7 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 	manualExpenses := postgres.NewManualExpenseRepository(db)
 	goals := postgres.NewGoalRepository(db)
 	notifications := postgres.NewNotificationRepository(db)
+	budgets := postgres.NewBudgetRepository(db)
 	monoClient := monoclient.NewClientWithTimeout(cfg.MonoBaseURL, cfg.MonoSecretKey, cfg.MonoPublicKey, time.Duration(cfg.MonoTimeoutSecs)*time.Second)
 	monoClient.Debug = cfg.MonoDebugLogging && cfg.Env != "production"
 	// create background context and cancel
@@ -106,6 +108,7 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 	app.ManualExpenses = manualExpenses
 	app.Goals = goals
 	app.Notifications = notifications
+	app.Budgets = budgets
 	profileRepo := postgres.NewProfileRepository(db)
 	app.Profile = profileapp.NewService(profileRepo, emailSender, cfg.JWTSecret)
 	if cfg.AvatarStorageConfigured() {

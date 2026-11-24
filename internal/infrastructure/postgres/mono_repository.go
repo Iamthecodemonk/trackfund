@@ -350,6 +350,49 @@ func presentTransaction(t *MonoTransaction) error {
 	return nil
 }
 
+type MonthlyWrap struct {
+	Year              int            `json:"year"`
+	Month             int            `json:"month"`
+	Currency          string         `json:"currency"`
+	GeneratedAt       time.Time      `json:"generatedAt"`
+	Coverage          string         `json:"coverage"`
+	Income            int64          `json:"income"`
+	Expenses          int64          `json:"expenses"`
+	NetCashFlow       int64          `json:"netCashFlow"`
+	CategoryBreakdown []WrapCategory `json:"categoryBreakdown"`
+}
+type WrapCategory struct {
+	CategoryID string `json:"categoryId"`
+	Amount     int64  `json:"amount"`
+}
+
+func (r *MonoRepository) MonthlyWrap(ctx context.Context, userID, currency string, year, month int) (MonthlyWrap, error) {
+	start := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(0, 1, 0)
+	var income, expenses int64
+	err := r.pool.QueryRow(ctx, `SELECT COALESCE(SUM(CASE WHEN t.amount>0 AND t.counts_toward_income THEN t.amount ELSE 0 END),0),COALESCE(SUM(CASE WHEN t.amount<0 AND t.counts_toward_spending THEN -t.amount ELSE 0 END),0) FROM mono_transactions t JOIN mono_accounts a ON a.id=t.mono_account_id WHERE a.user_id=$1 AND a.deleted_at IS NULL AND t.currency=$2 AND t.paid_at >= $3 AND t.paid_at < $4`, userID, currency, start, end).Scan(&income, &expenses)
+	if err != nil {
+		return MonthlyWrap{}, err
+	}
+	rows, err := r.pool.Query(ctx, `SELECT COALESCE(NULLIF(t.category_id,''),'uncategorized'),COALESCE(SUM(-t.amount),0) FROM mono_transactions t JOIN mono_accounts a ON a.id=t.mono_account_id WHERE a.user_id=$1 AND a.deleted_at IS NULL AND t.currency=$2 AND t.amount<0 AND t.counts_toward_spending AND t.paid_at >= $3 AND t.paid_at < $4 GROUP BY 1 ORDER BY 2 DESC`, userID, currency, start, end)
+	if err != nil {
+		return MonthlyWrap{}, err
+	}
+	defer rows.Close()
+	categories := []WrapCategory{}
+	for rows.Next() {
+		var item WrapCategory
+		if err := rows.Scan(&item.CategoryID, &item.Amount); err != nil {
+			return MonthlyWrap{}, err
+		}
+		categories = append(categories, item)
+	}
+	if err := rows.Err(); err != nil {
+		return MonthlyWrap{}, err
+	}
+	return MonthlyWrap{Year: year, Month: month, Currency: currency, GeneratedAt: time.Now().UTC(), Coverage: "incomplete", Income: income, Expenses: expenses, NetCashFlow: income - expenses, CategoryBreakdown: categories}, nil
+}
+
 type TransactionUserMetadata struct{ Category, CategoryID, UserDescription, PersonalNote *string }
 
 func (r *MonoRepository) UpdateTransactionMetadata(ctx context.Context, userID, transactionID string, in TransactionUserMetadata) (MonoTransaction, error) {

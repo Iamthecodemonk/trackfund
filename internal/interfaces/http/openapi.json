@@ -1372,6 +1372,30 @@
         "security": [ { "bearerAuth": [] } ]
       }
     },
+    "/api/transactions/transfers": {
+      "post": {
+        "summary": "Confirm a transfer between two owned bank transactions",
+        "description": "Accepts fromTransactionId and toTransactionId, both stable internal transaction ids. Both records must belong to the authenticated user. The resulting transfer relationship excludes both records from spending and income totals without changing provider amount, currency, date or identity.",
+        "requestBody": { "required": true, "description": "JSON object: { fromTransactionId, toTransactionId }." },
+        "responses": { "200": { "description": "Transfer group and the two reclassified transactions" }, "400": { "description": "Two distinct identifiers are required" }, "401": { "description": "Authentication required" }, "404": { "description": "One or both transactions are missing or not owned by the user" } },
+        "security": [ { "bearerAuth": [] } ]
+      }
+    },
+    "/api/budgets": {
+      "get": { "summary": "List the authenticated user's budgets", "responses": { "200": { "description": "Owner-scoped budgets; an empty array is returned for a new user" }, "401": { "description": "Authentication required" } }, "security": [ { "bearerAuth": [] } ] },
+      "post": { "summary": "Create a period/category budget", "description": "Requires name, ISO currency, IANA timezone, periodStart, periodEnd and optional category allocations. Amounts are integer minor units; budgets are separate from funds.", "responses": { "201": { "description": "Canonical budget" }, "400": { "description": "Invalid budget" }, "401": { "description": "Authentication required" } }, "security": [ { "bearerAuth": [] } ] }
+    },
+    "/api/budgets/{id}": {
+      "get": { "summary": "Get one budget", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "200": { "description": "Budget" }, "404": { "description": "Budget not found" } }, "security": [ { "bearerAuth": [] } ] },
+      "patch": { "summary": "Replace a budget's period and allocations", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "200": { "description": "Updated budget" }, "404": { "description": "Budget not found" } }, "security": [ { "bearerAuth": [] } ] },
+      "delete": { "summary": "Archive a budget", "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } } ], "responses": { "204": { "description": "Archived" }, "404": { "description": "Budget not found" } }, "security": [ { "bearerAuth": [] } ] }
+    },
+    "/api/home/summary": {
+      "get": { "summary": "Get conservative Home calculation inputs", "description": "Requires a currency query parameter. Returns asOf, connected-account balance sum and active budget allocations in integer minor units. safeToSpend is null with availability=incomplete until imported-history coverage and cash reconciliation are complete.", "parameters": [ { "name": "currency", "in": "query", "required": true, "schema": { "type": "string", "pattern": "^[A-Z]{3}$" } } ], "responses": { "200": { "description": "Calculation inputs with explicit availability" }, "400": { "description": "Invalid currency" }, "401": { "description": "Authentication required" } }, "security": [ { "bearerAuth": [] } ] }
+    },
+    "/api/monthly-wrap": {
+      "get": { "summary": "Generate a transfer-adjusted Monthly Wrap", "description": "Requires year, month and currency. Returns integer minor-unit income, expenses, netCashFlow and category breakdown from imported transactions. coverage is incomplete because provider historical coverage and cash reconciliation are not yet complete.", "parameters": [ { "name": "year", "in": "query", "required": true, "schema": { "type": "integer" } }, { "name": "month", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1, "maximum": 12 } }, { "name": "currency", "in": "query", "required": true, "schema": { "type": "string", "pattern": "^[A-Z]{3}$" } } ], "responses": { "200": { "description": "Monthly Wrap snapshot" }, "400": { "description": "Invalid period or currency" }, "401": { "description": "Authentication required" } }, "security": [ { "bearerAuth": [] } ] }
+    },
     "/funds": {
       "get": {
         "summary": "List the authenticated user's funds",

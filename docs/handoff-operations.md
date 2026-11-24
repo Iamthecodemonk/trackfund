@@ -1,6 +1,6 @@
 # TrackIQ Mono/Profile operational contract
 
-Startup runs additive migrations through 010. Back up PostgreSQL before deployment; no
+Startup runs additive migrations through 011. Back up PostgreSQL before deployment; no
 existing account/transaction rows are removed by this migration.
 
 ## Account removal
@@ -116,6 +116,35 @@ Each account response includes `lastSyncedAt`, `balanceObservedAt`,
 `failureReason`, and `historicalCoverage`. Clients must use these fields rather
 than interpreting an empty transaction collection as a completed import. Current
 provider history coverage is explicitly `unknown`.
+
+`POST /api/transactions/transfers` accepts two different internal transaction
+IDs, both owned by the caller. It records an explicit transfer group and marks
+both records as excluded from spending and income totals. This is a confirmed
+own-account transfer only; uncertain provider pairs remain unclassified.
+Manual cash expenses are not reconciled automatically with ATM withdrawals yet,
+so clients must not silently offset one against the other.
+
+## Budgets
+
+Budgets are separate from funds and goals. `POST` and `GET /api/budgets`, plus
+`GET`, `PATCH`, and `DELETE /api/budgets/{id}`, store owner-scoped period
+budgets with a currency, IANA timezone, UTC period boundaries, and semantic
+category allocations. All allocation limits use integer minor units. Budgets
+are archived on delete. Actual-spend and safe-to-spend calculations are not
+published as authoritative yet because history coverage and cash reconciliation
+remain incomplete.
+
+`GET /api/home/summary?currency=NGN` supplies an `asOf` timestamp,
+connected-account balance total and active budget allocation total for one
+currency. It intentionally returns `safeToSpend: null` and
+`availability: "incomplete"` until the provider-history and cash-reconciliation
+requirements are met; clients must not display an unqualified amount.
+
+`GET /api/monthly-wrap?year=2026&month=11&currency=NGN` returns a generated
+UTC snapshot of transfer-adjusted imported income, expenses, net cash flow and
+category breakdown, all in integer minor units. Its coverage is explicitly
+`incomplete`; no recommendation, cash claim, or previous-period comparison is
+returned until the underlying coverage and reconciliation rules are complete.
 
 Session progression: pending -> connected -> syncing -> available. connected means
 the account row is committed; syncing means provider transactions are ready to
