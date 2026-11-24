@@ -378,3 +378,51 @@ func stringValue(value *string) string {
 	}
 	return *value
 }
+
+func (r *MonoRepository) MarkTransfer(ctx context.Context, userID, firstID, secondID, groupID string) ([]MonoTransaction, error) {
+	if firstID == secondID {
+		return nil, errors.New("transfer requires two transactions")
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	rows, err := tx.Query(ctx, `SELECT t.id,t.mono_account_id FROM mono_transactions t JOIN mono_accounts a ON a.id=t.mono_account_id WHERE t.id=ANY($1) AND a.user_id=$2 AND a.deleted_at IS NULL FOR UPDATE`, []string{firstID, secondID}, userID)
+	if err != nil {
+		return nil, err
+	}
+	accounts := map[string]string{}
+	for rows.Next() {
+		var id, accountID string
+		if err := rows.Scan(&id, &accountID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		accounts[id] = accountID
+	}
+	rows.Close()
+	if len(accounts) != 2 {
+		return nil, pgx.ErrNoRows
+	}
+	if _, err := tx.Exec(ctx, `UPDATE mono_transactions SET transfer_group_id=$3,counts_toward_spending=FALSE,counts_toward_income=FALSE WHERE id=ANY($1) AND mono_account_id=ANY($2)`, []string{firstID, secondID}, []string{accounts[firstID], accounts[secondID]}, groupID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	result := []MonoTransaction{}
+	for _, id := range []string{firstID, secondID} {
+		items, err := r.ListTransactionsByAccountID(ctx, accounts[id])
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			if item.ID == id {
+				result = append(result, item)
+				break
+			}
+		}
+	}
+	return result, nil
+}

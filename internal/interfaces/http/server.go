@@ -136,6 +136,7 @@ func (s *Server) routes() {
 	goals.Delete("/api/goals/{id}", s.deleteGoal)
 	goals.Patch("/api/transactions/{id}", s.updateTransactionMetadata)
 	goals.Get("/api/transactions", s.listTransactions)
+	goals.Post("/api/transactions/transfers", s.markTransfer)
 	goals.Get("/api/notifications", s.listNotifications)
 	goals.Patch("/api/notifications/{id}", s.updateNotification)
 	goals.Patch("/api/notifications/{id}/read", s.updateNotification)
