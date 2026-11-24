@@ -615,12 +615,12 @@
                   },
                   "otp": {
                     "type": "string"
-                  },
-                  "required": [
-                    "email",
-                    "otp"
-                  ]
-                }
+                  }
+                },
+                "required": [
+                  "email",
+                  "otp"
+                ]
               },
               "example": {
                 "email": "jane@example.com",
@@ -726,13 +726,13 @@
                   },
                   "newPassword": {
                     "type": "string"
-                  },
-                  "required": [
-                    "email",
-                    "otp",
-                    "newPassword"
-                  ]
-                }
+                  }
+                },
+                "required": [
+                  "email",
+                  "otp",
+                  "newPassword"
+                ]
               },
               "example": {
                 "email": "jane@example.com",
@@ -792,6 +792,65 @@
               }
             }
           }
+        }
+      }
+    },
+    "/api/auth/refresh-token": {
+      "post": {
+        "summary": "Rotate a refresh token and issue a new session",
+        "description": "Public endpoint. A valid refresh token is single-use: it is revoked and replaced atomically with a new access/refresh pair. Invalid, expired, revoked, or replayed refresh tokens return 401. Do not retry a 401 with the same token; clear the local session and sign in again.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["refreshToken"],
+                "properties": {
+                  "refreshToken": {"type": "string", "minLength": 1},
+                  "deviceName": {"type": "string", "maxLength": 200}
+                }
+              },
+              "example": {"refreshToken": "<refresh-token>", "deviceName": "Pixel 9"}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Rotated session tokens",
+            "content": {"application/json": {"example": {"success": true, "data": {"accessToken": "<jwt>", "refreshToken": "<new-refresh-token>"}}}}
+          },
+          "400": {"description": "Malformed JSON"},
+          "401": {"description": "Refresh token is invalid, expired, revoked, or already used"},
+          "500": {"description": "Session storage temporarily unavailable"}
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "summary": "Revoke one refresh-token session",
+        "description": "Public endpoint. Revokes the supplied refresh token when it exists. The client must clear its local access and refresh tokens after any successful logout response.",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "required": ["refreshToken"], "properties": {"refreshToken": {"type": "string", "minLength": 1}}}, "example": {"refreshToken": "<refresh-token>"}}}
+        },
+        "responses": {
+          "200": {"description": "Session revoked", "content": {"application/json": {"example": {"success": true, "message": "Logged out successfully."}}}},
+          "400": {"description": "Malformed JSON"},
+          "500": {"description": "Session storage temporarily unavailable"}
+        }
+      }
+    },
+    "/api/auth/logout-all": {
+      "post": {
+        "summary": "Revoke every session for the signed-in user",
+        "security": [{"bearerAuth": []}],
+        "description": "Revokes all refresh tokens and advances the user's token version, invalidating every access token immediately.",
+        "responses": {
+          "200": {"description": "All sessions revoked", "content": {"application/json": {"example": {"success": true, "message": "Logged out from all devices."}}}},
+          "401": {"description": "Missing, invalid, expired, or revoked access token"},
+          "500": {"description": "Session storage temporarily unavailable"}
         }
       }
     },

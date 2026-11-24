@@ -151,10 +151,30 @@ func TestDocsMatchExportAndEndpoints(t *testing.T) {
 		if err := json.Unmarshal(rr.Body.Bytes(), &doc); err != nil {
 			t.Fatal(err)
 		}
-		for _, endpoint := range []string{"/api/profile/me/avatar", "/api/mono/accounts/{id}"} {
+		for _, endpoint := range []string{
+			"/api/profile/me/avatar", "/api/mono/accounts/{id}",
+			"/api/auth/refresh-token", "/api/auth/logout", "/api/auth/logout-all",
+		} {
 			if _, ok := doc.Paths[endpoint]; !ok {
 				t.Fatal("missing contract", endpoint)
 			}
+		}
+		var refresh struct {
+			Post struct {
+				RequestBody struct {
+					Content map[string]struct {
+						Schema struct {
+							Required []string `json:"required"`
+						} `json:"schema"`
+					} `json:"content"`
+				} `json:"requestBody"`
+			} `json:"post"`
+		}
+		if err := json.Unmarshal(doc.Paths["/api/auth/refresh-token"], &refresh); err != nil {
+			t.Fatal(err)
+		}
+		if got := refresh.Post.RequestBody.Content["application/json"].Schema.Required; len(got) != 1 || got[0] != "refreshToken" {
+			t.Fatal("refresh-token contract must require refreshToken", got)
 		}
 	}
 }
