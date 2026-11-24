@@ -1073,7 +1073,8 @@
                           "bankCode": "058",
                           "bankName": "Guaranty Trust Bank",
                           "bankLogoUrl": null,
-                          "currency": "NGN"
+                          "currency": "NGN",
+                          "balance": 500000
                         }
                       ]
                     }
@@ -1635,6 +1636,12 @@
           "currency": {
             "type": "string"
           },
+          "balance": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Latest balance reported by Mono, in integer minor units (for NGN, 500000 means ₦5,000.00). Null when Mono has not made balance data available for this account."
+          },
           "bankName": {
             "type": "string",
             "description": "Provider institution name, bank-code mapping, or Linked bank when unknown",
@@ -1654,7 +1661,8 @@
           "accountNumber",
           "bankCode",
           "bankName",
-          "currency"
+          "currency",
+          "balance"
         ]
       },
       "MonoTransaction": {

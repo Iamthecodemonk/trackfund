@@ -43,6 +43,11 @@ except Mono's webhook; the webhook verifies mono-webhook-secret before parsing.
 Mono documents shared-secret header verification, not a body HMAC signature:
 https://docs.mono.co/docs/webhooks
 
+Each connected account in GET /api/mono/accounts includes `balance`, the latest
+integer minor-unit balance from Mono's account-update webhook. For NGN, `500000`
+means ₦5,000.00. It is null only when Mono has not made balance data available;
+clients can sum non-null balances that share a currency for a portfolio total.
+
 Session progression: pending -> connected -> syncing -> available. connected means
 the account row is committed; syncing means provider transactions are ready to
 import. Steps may be skipped when notifications arrive out of order. After the

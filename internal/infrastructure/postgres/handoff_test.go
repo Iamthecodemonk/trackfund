@@ -179,8 +179,13 @@ func TestAvatarCommitCleanupAndConcurrentReplacement(t *testing.T) {
 	}
 }
 func TestBankSnapshotNotExposed(t *testing.T) {
-	a := MonoAccount{Metadata: json.RawMessage(`{"secret":"provider credential"}`)}
+	balance := int64(9007199254740993)
+	a := MonoAccount{Metadata: json.RawMessage(`{"account":{"balance":9007199254740993},"secret":"provider credential"}`)}
 	a.applyBranding()
+	a.applyBalance()
+	if a.Balance == nil || *a.Balance != balance {
+		t.Fatal("balance was not preserved exactly", a.Balance)
+	}
 	b, _ := json.Marshal(a)
 	if string(b) == "" {
 		t.Fatal("empty account")
@@ -189,5 +194,8 @@ func TestBankSnapshotNotExposed(t *testing.T) {
 	_ = json.Unmarshal(b, &obj)
 	if _, ok := obj["metadata"]; ok {
 		t.Fatal("provider snapshot exposed")
+	}
+	if got, ok := obj["balance"].(float64); !ok || got != float64(balance) {
+		t.Fatal("balance was not exposed", obj["balance"])
 	}
 }

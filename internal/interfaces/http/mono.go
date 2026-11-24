@@ -342,6 +342,9 @@ func (s *Server) completeMonoAccountLink(w http.ResponseWriter, r *http.Request,
 			"bank_name":      acct.BankName,
 			"currency":       acct.Currency,
 		}
+		if acct.Balance != nil {
+			metadata["balance"] = *acct.Balance
+		}
 		if err := s.app.MonoRepo.UpsertAccount(ctx, id, cur.ID, acct.ID, acct.Provider, acct.Name, acct.AccountNumber, acct.BankCode, acct.Currency, metadata); err != nil {
 			s.logMonoError(logName+".persistence_error", err,
 				slog.String("mono_account_id", acct.ID),

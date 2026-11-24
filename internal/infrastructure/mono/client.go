@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	monoapp "trackfund/internal/application/mono"
@@ -229,6 +230,7 @@ type MonoAccount struct {
 	Currency      string `json:"currency"`
 	Provider      string `json:"provider"`
 	BankName      string `json:"bank_name"`
+	Balance       *int64 `json:"balance,omitempty"`
 }
 
 type TransactionsResponse struct {
@@ -376,12 +378,18 @@ func (c *Client) UnlinkAccount(ctx context.Context, id string) error {
 }
 
 func (a *MonoAccount) UnmarshalJSON(body []byte) error {
-	type plain MonoAccount
 	var w struct {
-		plain
-		MongoID     string `json:"_id"`
-		CamelNumber string `json:"accountNumber"`
-		Institution struct {
+		ID            string          `json:"id"`
+		MongoID       string          `json:"_id"`
+		Name          string          `json:"name"`
+		AccountNumber string          `json:"account_number"`
+		CamelNumber   string          `json:"accountNumber"`
+		BankCode      string          `json:"bank_code"`
+		Currency      string          `json:"currency"`
+		Provider      string          `json:"provider"`
+		BankName      string          `json:"bank_name"`
+		Balance       json.RawMessage `json:"balance"`
+		Institution   struct {
 			Name     string `json:"name"`
 			BankCode string `json:"bankCode"`
 		} `json:"institution"`
@@ -389,7 +397,7 @@ func (a *MonoAccount) UnmarshalJSON(body []byte) error {
 	if err := json.Unmarshal(body, &w); err != nil {
 		return err
 	}
-	*a = MonoAccount(w.plain)
+	*a = MonoAccount{ID: w.ID, Name: w.Name, AccountNumber: w.AccountNumber, BankCode: w.BankCode, Currency: w.Currency, Provider: w.Provider, BankName: w.BankName}
 	if a.ID == "" {
 		a.ID = w.MongoID
 	}
@@ -404,6 +412,19 @@ func (a *MonoAccount) UnmarshalJSON(body []byte) error {
 	}
 	if a.Provider == "" {
 		a.Provider = "mono"
+	}
+	if len(w.Balance) != 0 && string(w.Balance) != "null" {
+		balanceText := string(w.Balance)
+		if w.Balance[0] == '"' {
+			if err := json.Unmarshal(w.Balance, &balanceText); err != nil {
+				return err
+			}
+		}
+		balance, err := strconv.ParseInt(balanceText, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid Mono account balance")
+		}
+		a.Balance = &balance
 	}
 	return nil
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 	monoapp "trackfund/internal/application/mono"
 
@@ -79,21 +81,24 @@ func (r *MonoRepository) GetInternalAccountIDByMonoID(ctx context.Context, monoA
 }
 
 type MonoAccount struct {
-	ID            string          `json:"id"`
-	UserID        string          `json:"userId"`
-	MonoAccountID string          `json:"monoAccountId"`
-	Provider      string          `json:"provider"`
-	AccountName   string          `json:"accountName"`
-	AccountNumber string          `json:"accountNumber"`
-	BankCode      string          `json:"bankCode"`
-	BankName      string          `json:"bankName"`
-	BankLogoURL   *string         `json:"bankLogoUrl"`
-	Currency      string          `json:"currency"`
-	Metadata      json.RawMessage `json:"-"`
-	CreatedAt     time.Time       `json:"createdAt"`
-	UpdatedAt     time.Time       `json:"updatedAt"`
-	LastSyncedAt  *time.Time      `json:"lastSyncedAt"`
-	LastEventAt   *time.Time      `json:"-"`
+	ID            string  `json:"id"`
+	UserID        string  `json:"userId"`
+	MonoAccountID string  `json:"monoAccountId"`
+	Provider      string  `json:"provider"`
+	AccountName   string  `json:"accountName"`
+	AccountNumber string  `json:"accountNumber"`
+	BankCode      string  `json:"bankCode"`
+	BankName      string  `json:"bankName"`
+	BankLogoURL   *string `json:"bankLogoUrl"`
+	Currency      string  `json:"currency"`
+	// Balance is Mono's latest reported account balance in integer minor units.
+	// It is nil until Mono confirms balance data for this connection.
+	Balance      *int64          `json:"balance"`
+	Metadata     json.RawMessage `json:"-"`
+	CreatedAt    time.Time       `json:"createdAt"`
+	UpdatedAt    time.Time       `json:"updatedAt"`
+	LastSyncedAt *time.Time      `json:"lastSyncedAt"`
+	LastEventAt  *time.Time      `json:"-"`
 }
 
 func (r *MonoRepository) ListAccounts(ctx context.Context, userID string) ([]MonoAccount, error) {
@@ -109,6 +114,7 @@ func (r *MonoRepository) ListAccounts(ctx context.Context, userID string) ([]Mon
 			return nil, err
 		}
 		a.applyBranding()
+		a.applyBalance()
 		out = append(out, a)
 	}
 	return out, rows.Err()
@@ -124,6 +130,7 @@ func (r *MonoRepository) GetAccountByID(ctx context.Context, id string) (MonoAcc
 		return MonoAccount{}, false, err
 	}
 	a.applyBranding()
+	a.applyBalance()
 	return a, true, nil
 }
 
@@ -141,9 +148,45 @@ func (r *MonoRepository) ListAllAccounts(ctx context.Context) ([]MonoAccount, er
 			return nil, err
 		}
 		a.applyBranding()
+		a.applyBalance()
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+func (a *MonoAccount) applyBalance() {
+	// Webhook snapshots keep the provider's balance as raw JSON to prevent an
+	// intermediate float conversion from losing money precision.
+	var snapshot struct {
+		Account struct {
+			Balance json.RawMessage `json:"balance"`
+		} `json:"account"`
+		Balance json.RawMessage `json:"balance"`
+	}
+	if json.Unmarshal(a.Metadata, &snapshot) != nil {
+		return
+	}
+	raw := snapshot.Account.Balance
+	if len(raw) == 0 {
+		raw = snapshot.Balance // Compatibility for older code-completion snapshots.
+	}
+	if balance, ok := parseIntegerBalance(raw); ok {
+		a.Balance = &balance
+	}
+}
+
+func parseIntegerBalance(raw json.RawMessage) (int64, bool) {
+	value := strings.TrimSpace(string(raw))
+	if value == "" || value == "null" {
+		return 0, false
+	}
+	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return 0, false
+		}
+	}
+	balance, err := strconv.ParseInt(value, 10, 64)
+	return balance, err == nil
 }
 
 type MonoTransaction struct {

@@ -7,7 +7,7 @@ import (
 
 func TestProviderBankDetailsAndSignedTransactions(t *testing.T) {
 	var a MonoAccount
-	if err := json.Unmarshal([]byte(`{"_id":"bank","name":"Everyday","accountNumber":"0123456789","currency":"NGN","institution":{"name":"Example Bank","bankCode":"058"}}`), &a); err != nil || a.ID != "bank" || a.BankName != "Example Bank" || a.BankCode != "058" || a.AccountNumber != "0123456789" {
+	if err := json.Unmarshal([]byte(`{"_id":"bank","name":"Everyday","accountNumber":"0123456789","currency":"NGN","balance":"9007199254740993","institution":{"name":"Example Bank","bankCode":"058"}}`), &a); err != nil || a.ID != "bank" || a.BankName != "Example Bank" || a.BankCode != "058" || a.AccountNumber != "0123456789" || a.Balance == nil || *a.Balance != 9007199254740993 {
 		t.Fatal(a, err)
 	}
 	var tx MonoTransaction
