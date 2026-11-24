@@ -33,18 +33,19 @@ type Queries struct {
 }
 
 type App struct {
-	Commands     Commands
-	Queries      Queries
-	Auth         authapp.Service
-	Profile      *profileapp.Service
-	Avatar       *avatar.Service
-	Logger       *logger.Logger
-	Closer       func()
-	MonoRepo     *postgres.MonoRepository
-	MonoSessions ports.MonoSessionStore
-	MonoWebhooks ports.MonoWebhookStore
-	MonoClient   *monoclient.Client
-	Config       config.Config
+	Commands       Commands
+	Queries        Queries
+	Auth           authapp.Service
+	Profile        *profileapp.Service
+	Avatar         *avatar.Service
+	Logger         *logger.Logger
+	Closer         func()
+	MonoRepo       *postgres.MonoRepository
+	ManualExpenses *postgres.ManualExpenseRepository
+	MonoSessions   ports.MonoSessionStore
+	MonoWebhooks   ports.MonoWebhookStore
+	MonoClient     *monoclient.Client
+	Config         config.Config
 }
 
 func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
@@ -84,6 +85,7 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 
 	monoRepo := postgres.NewMonoRepository(db)
+	manualExpenses := postgres.NewManualExpenseRepository(db)
 	monoClient := monoclient.NewClientWithTimeout(cfg.MonoBaseURL, cfg.MonoSecretKey, cfg.MonoPublicKey, time.Duration(cfg.MonoTimeoutSecs)*time.Second)
 	monoClient.Debug = cfg.MonoDebugLogging && cfg.Env != "production"
 	// create background context and cancel
@@ -96,6 +98,7 @@ func NewApp(ctx context.Context, cfg config.Config) (*App, error) {
 	app.Logger = lg
 	app.Config = cfg
 	app.MonoWebhooks = monoRepo
+	app.ManualExpenses = manualExpenses
 	profileRepo := postgres.NewProfileRepository(db)
 	app.Profile = profileapp.NewService(profileRepo, emailSender, cfg.JWTSecret)
 	if cfg.AvatarStorageConfigured() {

@@ -154,6 +154,7 @@ func TestDocsMatchExportAndEndpoints(t *testing.T) {
 		for _, endpoint := range []string{
 			"/api/profile/me/avatar", "/api/mono/accounts/{id}",
 			"/api/auth/refresh-token", "/api/auth/logout", "/api/auth/logout-all",
+			"/api/expenses", "/api/expenses/{id}",
 		} {
 			if _, ok := doc.Paths[endpoint]; !ok {
 				t.Fatal("missing contract", endpoint)
@@ -176,6 +177,78 @@ func TestDocsMatchExportAndEndpoints(t *testing.T) {
 		if got := refresh.Post.RequestBody.Content["application/json"].Schema.Required; len(got) != 1 || got[0] != "refreshToken" {
 			t.Fatal("refresh-token contract must require refreshToken", got)
 		}
+	}
+}
+
+func expenseRequest(s *Server, method, path, body, token, idempotencyKey string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if idempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", idempotencyKey)
+	}
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, req)
+	return rr
+}
+
+func TestManualExpenseHTTPCRUDAndOwnership(t *testing.T) {
+	app, pool, _, tokens := profileHTTPFixture(t)
+	app.ManualExpenses = postgres.NewManualExpenseRepository(pool)
+	s := NewServer(app)
+	alice := tokens["alice"].AccessToken
+	bob := tokens["bob"].AccessToken
+	if rr := expenseRequest(s, "POST", "/api/expenses", `{}`, alice, ""); rr.Code != 400 {
+		t.Fatal("idempotency key", rr.Code, rr.Body.String())
+	}
+	body := `{"amount":500000,"currency":"ngn","paymentMethod":"cash","category":"Food","description":"Market","note":"weekly","occurredAt":"2026-11-24T10:00:00+01:00"}`
+	rr := expenseRequest(s, "POST", "/api/expenses", body, alice, "cash-20261124-1")
+	if rr.Code != http.StatusCreated {
+		t.Fatal("create", rr.Code, rr.Body.String())
+	}
+	var created struct {
+		Success bool
+		Data    struct {
+			Expense          postgres.ManualExpense `json:"expense"`
+			IdempotentReplay bool
+		}
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil || !created.Success || created.Data.IdempotentReplay || created.Data.Expense.Source != "manual" || created.Data.Expense.Direction != "debit" || created.Data.Expense.Amount != 500000 || created.Data.Expense.Currency != "NGN" || created.Data.Expense.PaymentMethod != "cash" {
+		t.Fatal("create body", err, rr.Body.String())
+	}
+	// Retrying never creates a second expense, even if a mobile client retries with a changed body.
+	rr = expenseRequest(s, "POST", "/api/expenses", `{"amount":1,"currency":"NGN","paymentMethod":"card","description":"wrong retry"}`, alice, "cash-20261124-1")
+	if rr.Code != http.StatusOK {
+		t.Fatal("replay", rr.Code, rr.Body.String())
+	}
+	var replay struct {
+		Data struct {
+			Expense          postgres.ManualExpense `json:"expense"`
+			IdempotentReplay bool
+		}
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &replay)
+	if !replay.Data.IdempotentReplay || replay.Data.Expense.ID != created.Data.Expense.ID || replay.Data.Expense.Amount != 500000 {
+		t.Fatal("retry changed an expense", rr.Body.String())
+	}
+	if rr = expenseRequest(s, "GET", "/api/expenses", "", bob, ""); rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"data":[]`) {
+		t.Fatal("foreign list", rr.Code, rr.Body.String())
+	}
+	if rr = expenseRequest(s, "PATCH", "/api/expenses/"+created.Data.Expense.ID, `{"paymentMethod":"card","note":"corrected"}`, bob, ""); rr.Code != http.StatusNotFound {
+		t.Fatal("foreign update", rr.Code, rr.Body.String())
+	}
+	if rr = expenseRequest(s, "PATCH", "/api/expenses/"+created.Data.Expense.ID, `{"paymentMethod":"card","note":"corrected"}`, alice, ""); rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"paymentMethod":"card"`) {
+		t.Fatal("update", rr.Code, rr.Body.String())
+	}
+	if rr = expenseRequest(s, "DELETE", "/api/expenses/"+created.Data.Expense.ID, "", alice, ""); rr.Code != http.StatusNoContent {
+		t.Fatal("delete", rr.Code, rr.Body.String())
+	}
+	if rr = expenseRequest(s, "GET", "/api/expenses", "", alice, ""); rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"data":[]`) {
+		t.Fatal("deleted item listed", rr.Code, rr.Body.String())
+	}
+	if rr = expenseRequest(s, "POST", "/api/expenses", body, alice, "cash-20261124-1"); rr.Code != http.StatusConflict {
+		t.Fatal("deleted idempotency key recreated an expense", rr.Code, rr.Body.String())
 	}
 }
 func TestProviderUnlinkIsSanitizedAndIdempotent(t *testing.T) {

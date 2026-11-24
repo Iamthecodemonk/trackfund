@@ -110,6 +110,11 @@ func (s *Server) routes() {
 		r.Post("/funds", s.createFund)
 		r.Get("/funds/{id}", s.getFund)
 		r.Post("/funds/{id}/contributions", s.recordContribution)
+		// Manual records supplement bank-imported transactions; they are never sent to Mono.
+		r.Post("/api/expenses", s.createManualExpense)
+		r.Get("/api/expenses", s.listManualExpenses)
+		r.Patch("/api/expenses/{id}", s.updateManualExpense)
+		r.Delete("/api/expenses/{id}", s.deleteManualExpense)
 	})
 	profileRoutes := s.router.With(s.requireProfileAuth)
 	profileRoutes.Get("/api/profile/me", s.getProfile)

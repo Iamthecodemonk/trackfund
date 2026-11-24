@@ -48,6 +48,22 @@ integer minor-unit balance from Mono's account-update webhook. For NGN, `500000`
 means ₦5,000.00. It is null only when Mono has not made balance data available;
 clients can sum non-null balances that share a currency for a portfolio total.
 
+## Manual expenses
+
+`POST /api/expenses` records user-entered cash and offline spending. It accepts
+a positive integer minor-unit `amount`, `currency`, `paymentMethod` (`cash`,
+`card`, `transfer` or `other`), a description, and optional category, note and
+occurredAt. Send a unique `Idempotency-Key` header for every create attempt;
+retrying a request with the same key returns the original record rather than
+creating a duplicate. A key for a deleted record cannot create it again; use a
+new key for a deliberate replacement.
+
+`GET /api/expenses` returns the owner’s manual records, including `source:
+"manual"` and `direction:"debit"`, so clients can combine them with bank-feed
+transactions without treating them as Mono data. `PATCH` and `DELETE
+/api/expenses/{id}` are owner-only; deleted records disappear from lists and
+subsequent edits/deletes return 404. Keep currencies separate in totals.
+
 Session progression: pending -> connected -> syncing -> available. connected means
 the account row is committed; syncing means provider transactions are ready to
 import. Steps may be skipped when notifications arrive out of order. After the

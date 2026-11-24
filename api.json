@@ -854,6 +854,39 @@
         }
       }
     },
+    "/api/expenses": {
+      "post": {
+        "summary": "Create a durable manual expense",
+        "security": [{"bearerAuth": []}],
+        "parameters": [{"name": "Idempotency-Key", "in": "header", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 200}, "description": "A client-generated key. Retrying with the same key returns the original expense without creating a duplicate."}],
+        "description": "Records a user-entered expense that occurred outside a linked bank feed. amount is a positive integer in minor units; the returned record has direction=debit. Supported payment methods are cash, card, transfer, and other.",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "required": ["amount", "currency", "paymentMethod", "description"], "properties": {"amount": {"type": "integer", "format": "int64", "minimum": 1, "description": "Positive integer minor units; 500000 represents ₦5,000.00."}, "currency": {"type": "string", "pattern": "^[A-Za-z]{3}$"}, "paymentMethod": {"type": "string", "enum": ["cash", "card", "transfer", "other"]}, "category": {"type": "string", "maxLength": 80}, "description": {"type": "string", "minLength": 1, "maxLength": 400}, "note": {"type": "string", "maxLength": 2000}, "occurredAt": {"type": "string", "format": "date-time", "description": "Defaults to the server time when omitted."}}}, "example": {"amount": 500000, "currency": "NGN", "paymentMethod": "cash", "category": "Food", "description": "Market", "occurredAt": "2026-11-24T09:00:00Z"}}}
+        },
+        "responses": {"201": {"description": "Expense created", "content": {"application/json": {"example": {"success": true, "data": {"expense": {"id": "manual-expense-id", "source": "manual", "amount": 500000, "direction": "debit", "currency": "NGN", "paymentMethod": "cash", "category": "Food", "description": "Market", "occurredAt": "2026-11-24T09:00:00Z"}, "idempotentReplay": false}}}}}, "200": {"description": "Idempotent retry; original expense returned"}, "400": {"description": "Invalid body, fields, or Idempotency-Key"}, "401": {"description": "Unauthorized"}, "409": {"description": "The idempotency key belongs to a deleted expense; use a new key"}, "500": {"description": "Expense storage unavailable"}}
+      },
+      "get": {
+        "summary": "List the signed-in user's manual expenses",
+        "security": [{"bearerAuth": []}],
+        "responses": {"200": {"description": "Manual expense collection; new users receive an empty array", "content": {"application/json": {"example": {"success": true, "data": []}}}}, "401": {"description": "Unauthorized"}, "500": {"description": "Expense storage unavailable"}}
+      }
+    },
+    "/api/expenses/{id}": {
+      "patch": {
+        "summary": "Update a manual expense",
+        "security": [{"bearerAuth": []}],
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "minProperties": 1, "properties": {"amount": {"type": "integer", "format": "int64", "minimum": 1}, "currency": {"type": "string", "pattern": "^[A-Za-z]{3}$"}, "paymentMethod": {"type": "string", "enum": ["cash", "card", "transfer", "other"]}, "category": {"type": "string", "maxLength": 80}, "description": {"type": "string", "minLength": 1, "maxLength": 400}, "note": {"type": "string", "maxLength": 2000}, "occurredAt": {"type": "string", "format": "date-time"}}}}}},
+        "responses": {"200": {"description": "Updated manual expense"}, "400": {"description": "Invalid body or fields"}, "401": {"description": "Unauthorized"}, "404": {"description": "Missing or foreign expense"}, "500": {"description": "Expense storage unavailable"}}
+      },
+      "delete": {
+        "summary": "Delete a manual expense",
+        "security": [{"bearerAuth": []}],
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"204": {"description": "Expense deleted"}, "401": {"description": "Unauthorized"}, "404": {"description": "Missing or foreign expense"}, "500": {"description": "Expense storage unavailable"}}
+      }
+    },
     "/api/mono/link-session": {
       "post": {
         "summary": "Create a Mono link session (returns Mono Connect URL for frontend/mobile)",
